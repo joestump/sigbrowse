@@ -1,4 +1,4 @@
-// Package cli wires sigbrowse's Cobra command tree to its Viper configuration.
+// Package cli wires msgbrowse's Cobra command tree to its Viper configuration.
 //
 // The root command owns the persistent flags shared by every subcommand and the
 // config-loading lifecycle; each subcommand lives in its own file and receives a
@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/joestump/sigbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,13 +21,13 @@ var cfgFile string
 // PersistentPreRunE after flag parsing.
 var v *viper.Viper
 
-// NewRootCommand builds the root `sigbrowse` command and attaches every
+// NewRootCommand builds the root `msgbrowse` command and attaches every
 // subcommand. It is exported so tests can exercise the command tree.
 func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "sigbrowse",
+		Use:   "msgbrowse",
 		Short: "Browse, search, and semantically query a local signal-export archive",
-		Long: "sigbrowse is a self-hosted, local-only web app and MCP server over a\n" +
+		Long: "msgbrowse is a self-hosted, local-only web app and MCP server over a\n" +
 			"signal-export archive. It treats the archive as strictly read-only and keeps\n" +
 			"all data on the machine; the only network egress is the configured\n" +
 			"OpenAI-compatible LLM endpoint.",
@@ -42,7 +42,7 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	pf := root.PersistentFlags()
-	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/sigbrowse/config.yaml)")
+	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/msgbrowse/config.yaml)")
 	pf.String("archive-root", "", "path to the signal-export archive (read-only)")
 	pf.String("data-dir", "", "writable directory for the database and caches")
 	pf.String("log-level", "", "log level: debug, info, warn, error")

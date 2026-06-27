@@ -32,9 +32,9 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestEnvOverride(t *testing.T) {
-	t.Setenv("SIGBROWSE_LISTEN_ADDR", "127.0.0.1:9999")
-	t.Setenv("SIGBROWSE_LLM_API_KEY", "secret-from-env")
-	t.Setenv("SIGBROWSE_LOG_LEVEL", "debug")
+	t.Setenv("MSGBROWSE_LISTEN_ADDR", "127.0.0.1:9999")
+	t.Setenv("MSGBROWSE_LLM_API_KEY", "secret-from-env")
+	t.Setenv("MSGBROWSE_LOG_LEVEL", "debug")
 
 	v, err := Load("")
 	if err != nil {

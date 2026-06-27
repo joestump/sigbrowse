@@ -5,12 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/joestump/sigbrowse/internal/config"
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // dbFileName is the SQLite database file within the data directory.
-const dbFileName = "sigbrowse.sqlite"
+const dbFileName = "msgbrowse.sqlite"
 
 // dbPath returns the absolute path to the SQLite database for the given config.
 func dbPath(cfg *config.Config) string {
@@ -29,7 +29,7 @@ func openStore(cfg *config.Config) (*store.Store, error) {
 // requireArchive verifies the archive root is configured and present.
 func requireArchive(cfg *config.Config) error {
 	if cfg.ArchiveRoot == "" {
-		return fmt.Errorf("archive_root is not set (use --archive-root, config, or SIGBROWSE_ARCHIVE_ROOT)")
+		return fmt.Errorf("archive_root is not set (use --archive-root, config, or MSGBROWSE_ARCHIVE_ROOT)")
 	}
 	info, err := os.Stat(cfg.ArchiveRoot)
 	if err != nil {

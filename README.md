@@ -1,10 +1,10 @@
-# sigbrowse
+# msgbrowse
 
 > Self-hosted, local-only browser, search engine, and MCP server over a
 > [`signal-export`](https://github.com/carderne/signal-export) archive.
 > Think *Backrest-for-Restic*, but for your Signal Desktop history.
 
-sigbrowse renders a clean local UI over an existing on-disk Signal backup tree,
+msgbrowse renders a clean local UI over an existing on-disk Signal backup tree,
 adds fast keyword + semantic search, and exposes an **MCP server** so Claude can
 answer natural-language questions over your message history. It runs entirely on
 your machine via Docker. **Nothing leaves the box** except calls to the one
@@ -42,7 +42,7 @@ OpenAI-compatible LLM endpoint you configure (default: a local LiteLLM proxy).
 make build
 make test
 
-# Or run the whole stack (LiteLLM + sigbrowse) with Docker
+# Or run the whole stack (LiteLLM + msgbrowse) with Docker
 make up
 make ingest
 # open http://127.0.0.1:8787

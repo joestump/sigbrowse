@@ -30,7 +30,7 @@
     <h2>Encrypted DB snapshots</h2>
     <p class="muted">Total footprint: {{humanSize .SnapshotFootprint}} across {{len .Snapshots}} snapshots.
       These are SQLCipher-encrypted raw database backups for disaster recovery —
-      sigbrowse lists them but never opens or decrypts them.</p>
+      msgbrowse lists them but never opens or decrypts them.</p>
     {{if .Snapshots}}
     <table class="snapshots">
       <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/signal"
 )
 
 // preview returns a single-line, length-capped excerpt of a message body for

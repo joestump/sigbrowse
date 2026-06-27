@@ -6,10 +6,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/joestump/sigbrowse/internal/config"
-	"github.com/joestump/sigbrowse/internal/ingest"
-	"github.com/joestump/sigbrowse/internal/store"
-	"github.com/joestump/sigbrowse/internal/web"
+	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/web"
 	"github.com/spf13/cobra"
 )
 

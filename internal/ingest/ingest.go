@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/signal"
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // ExportDir is the archive subdirectory holding per-conversation folders.

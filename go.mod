@@ -1,4 +1,4 @@
-module github.com/joestump/sigbrowse
+module github.com/joestump/msgbrowse
 
 go 1.23.0
 

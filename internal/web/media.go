@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/joestump/sigbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/ingest"
 )
 
 // handleMedia serves an attachment from a conversation's folder in the read-only

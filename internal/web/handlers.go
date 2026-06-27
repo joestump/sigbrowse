@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // baseData is embedded in every full-page view; it drives the chrome (sidebar).
@@ -68,7 +68,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "index", indexData{
-		baseData:      baseData{Title: "sigbrowse", Conversations: convs},
+		baseData:      baseData{Title: "msgbrowse", Conversations: convs},
 		NewestTS:      newest,
 		TotalMessages: total,
 		HasArchive:    len(convs) > 0,
@@ -102,7 +102,7 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "conversation", conversationData{
-		baseData: baseData{Title: active.Name + " · sigbrowse", Conversations: convs, ActiveID: id},
+		baseData: baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
 		Active:   active,
 		List: messageListData{
 			ActiveID:   id,
@@ -169,7 +169,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		footprint += sn.SizeBytes
 	}
 	s.render(w, "status", statusData{
-		baseData:          baseData{Title: "Status · sigbrowse", Conversations: convs},
+		baseData:          baseData{Title: "Status · msgbrowse", Conversations: convs},
 		Run:               run,
 		Snapshots:         snaps,
 		NewestTS:          newest,

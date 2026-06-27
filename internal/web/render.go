@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/joestump/sigbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/signal"
 )
 
 // bodyTokenRe matches, in priority order, a Markdown image, a Markdown link, or

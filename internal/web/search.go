@@ -112,6 +112,21 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Verify the target message actually belongs to this conversation. Without
+	// this, /c/{id}/at/{mid} would render conversation {id}'s header and sidebar
+	// state while GetContext (which derives the conversation from the message
+	// itself) shows a *different* conversation's transcript — an
+	// information-disclosure / identity-confusion bug for a crafted or mistyped
+	// link.
+	ownerConv, found, err := s.store.MessageConversationID(ctx, mid)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found || ownerConv != id {
+		http.NotFound(w, r)
+		return
+	}
 	msgs, err := s.store.GetContext(ctx, mid, searchContextWindow)
 	if err != nil {
 		s.serverError(w, err)

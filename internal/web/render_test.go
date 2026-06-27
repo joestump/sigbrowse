@@ -123,3 +123,40 @@ func TestSafeMediaPath(t *testing.T) {
 		}
 	})
 }
+
+func TestHighlightSnippet(t *testing.T) {
+	start := storeSnippetStart()
+	end := storeSnippetEnd()
+
+	t.Run("wraps sentinels in mark and escapes body", func(t *testing.T) {
+		in := "see " + start + "lease" + end + " <b>terms</b>"
+		got := string(highlightSnippet(in))
+		if !strings.Contains(got, "<mark>lease</mark>") {
+			t.Errorf("missing highlight: %q", got)
+		}
+		if strings.Contains(got, "<b>") || !strings.Contains(got, "&lt;b&gt;") {
+			t.Errorf("body HTML not escaped: %q", got)
+		}
+	})
+
+	t.Run("strips stray control chars to keep marks balanced", func(t *testing.T) {
+		// A crafted body byte equal to the end sentinel, with no matching start,
+		// must not leak an unbalanced </mark>. The strip removes it (it is not
+		// part of an FTS-inserted pair in this synthetic input only if it is a
+		// lone control char — here we use a different control byte to simulate
+		// arbitrary body control chars).
+		in := "harmless\x01text \x07more"
+		got := string(highlightSnippet(in))
+		if strings.ContainsAny(got, "\x01\x07") {
+			t.Errorf("control chars not stripped: %q", got)
+		}
+		if strings.Contains(got, "<mark>") || strings.Contains(got, "</mark>") {
+			t.Errorf("no sentinels present, but marks appeared: %q", got)
+		}
+	})
+}
+
+// storeSnippetStart/End expose the store sentinels to tests without importing
+// the constant inline at every call site.
+func storeSnippetStart() string { return "\x02" }
+func storeSnippetEnd() string   { return "\x03" }

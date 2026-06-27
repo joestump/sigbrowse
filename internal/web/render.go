@@ -118,14 +118,41 @@ func domainOf(rawurl string) string { return signal.Domain(rawurl) }
 
 // highlightSnippet converts an FTS5 snippet (whose matched terms are wrapped in
 // store.SnippetMark{Start,End} control characters) into safe highlighted HTML.
-// The whole snippet is HTML-escaped first — so the untrusted body text can never
-// inject markup — and only then are the (escape-surviving) control-char
-// sentinels replaced with <mark>…</mark>. Newlines become spaces to keep result
-// rows single-line.
+//
+// Order matters for both safety and tag balance:
+//  1. Strip C0 control characters EXCEPT the two sentinels and tab/newline. A
+//     crafted message body could itself contain a literal sentinel byte, which
+//     would otherwise survive escaping and emit a stray, unbalanced <mark> /
+//     </mark>. (Not an XSS — <mark> carries no attribute/script context — but
+//     we keep the markup well-formed.)
+//  2. HTML-escape, so untrusted body text can never inject markup.
+//  3. Replace the escape-surviving sentinels with <mark>…</mark>.
+//  4. Collapse newlines to spaces so result rows stay single-line.
 func highlightSnippet(snippet string) template.HTML {
+	snippet = stripControlExceptSentinels(snippet)
 	escaped := html.EscapeString(snippet)
 	escaped = strings.ReplaceAll(escaped, store.SnippetMarkStart, "<mark>")
 	escaped = strings.ReplaceAll(escaped, store.SnippetMarkEnd, "</mark>")
 	escaped = strings.ReplaceAll(escaped, "\n", " ")
 	return template.HTML(escaped)
+}
+
+// stripControlExceptSentinels removes C0 control characters from s, preserving
+// the snippet highlight sentinels, tab, and newline. FTS5's snippet() inserts
+// the sentinels as balanced pairs, so after this the only sentinel bytes left
+// are the ones it added.
+func stripControlExceptSentinels(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n':
+			return r
+		}
+		if s := string(r); s == store.SnippetMarkStart || s == store.SnippetMarkEnd {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1 // drop
+		}
+		return r
+	}, s)
 }

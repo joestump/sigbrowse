@@ -119,3 +119,27 @@ func TestConversationAtNotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
+
+// TestConversationAtWrongConversation guards the access-control fix: a message id
+// that belongs to a DIFFERENT conversation than the URL's must 404, not render
+// one conversation's transcript under another's header.
+func TestConversationAtWrongConversation(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	ctx := context.Background()
+
+	harper, _ := st.GetConversation(ctx, "Harper")
+	group, _ := st.GetConversation(ctx, "Group Trip")
+
+	// A real message id from Harper.
+	hits, err := st.SearchMessages(ctx, store.SearchOptions{Query: "trip", ConversationID: harper.ID})
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("seed search failed: %v (%d hits)", err, len(hits))
+	}
+	harperMid := hits[0].MessageID
+
+	// Requesting it under the Group Trip conversation must 404.
+	rec := get(t, srv, "/c/"+itoa(group.ID)+"/at/"+itoa(harperMid))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("cross-conversation jump status = %d, want 404", rec.Code)
+	}
+}

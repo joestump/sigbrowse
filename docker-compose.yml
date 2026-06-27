@@ -42,9 +42,11 @@ services:
       MSGBROWSE_ARCHIVE_ROOT: /archive
       MSGBROWSE_DATA_DIR: /data
       MSGBROWSE_LISTEN_ADDR: 0.0.0.0:8787      # in-container; host mapping is loopback
-      # Defaults to the bundled service name; override in .env to use an external
-      # LiteLLM. Must end in /v1.
-      MSGBROWSE_LLM_BASE_URL: ${MSGBROWSE_LLM_BASE_URL:-http://litellm:4000/v1}
+      # Required (must end in /v1): your external LiteLLM, or
+      # http://litellm:4000/v1 when running `make up-bundled`. Required rather
+      # than silently defaulted so a missing value fails at `up` with a clear
+      # message, not as a confusing connection error at the first embed call.
+      MSGBROWSE_LLM_BASE_URL: ${MSGBROWSE_LLM_BASE_URL:?set MSGBROWSE_LLM_BASE_URL in .env (your LiteLLM /v1 URL, or http://litellm:4000/v1 with make up-bundled)}
       MSGBROWSE_LLM_API_KEY: ${MSGBROWSE_LLM_API_KEY:-}
       MSGBROWSE_LLM_CHAT_MODEL: ${MSGBROWSE_LLM_CHAT_MODEL:-local-chat}
       MSGBROWSE_LLM_EMBED_MODEL: ${MSGBROWSE_LLM_EMBED_MODEL:-local-embed}

@@ -1,0 +1,398 @@
+// Package facts extracts durable, cited facts about a contact from their chat
+// messages using the configured LLM, and stores them for display on the
+// conversation view.
+//
+// It is incremental and idempotent, mirroring the embed package: a per-
+// conversation cursor (internal/store fact_state) records the last message fed
+// to the extractor, so a re-run after a fresh import only analyzes new messages.
+// Facts are deduplicated per contact by normalized text, so reprocessing — or
+// extracting from two conversations merged onto one contact — never duplicates a
+// fact. Like embed, this is a separate command that performs network egress to
+// llm.base_url; a plain import never calls the LLM. Conversations on
+// journal.exclude_conversations are never handed to the extractor.
+package facts
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/joestump/msgbrowse/internal/llm"
+	"github.com/joestump/msgbrowse/internal/store"
+)
+
+// Categories is the allowlist of fact categories. The extractor is asked to use
+// these; anything else is coerced to "other" so the UI can group reliably.
+var Categories = []string{
+	"personal",
+	"work",
+	"relationships",
+	"preferences",
+	"health",
+	"location",
+	"plans",
+	"other",
+}
+
+func isKnownCategory(c string) bool {
+	for _, k := range Categories {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
+// systemPrompt instructs the model to return strict JSON. It is part of the
+// effective prompt version; editing it changes extraction behavior.
+const systemPrompt = `You extract durable, factual information about ONE person (the contact) from a transcript of their chat messages.
+
+Rules:
+- Return ONLY a JSON array, no prose, no markdown fences.
+- Each element is an object: {"fact": string, "category": string, "evidence": integer}.
+- "fact" is a single, atomic, self-contained statement about the contact, in third person, terse (e.g. "Has a dog named Biscuit", "Works as a nurse in Denver"). Phrase recurring facts consistently so duplicates collapse.
+- "category" is one of: personal, work, relationships, preferences, health, location, plans, other.
+- "evidence" is the 1-based number of the single message that best supports the fact.
+- Only include facts that are clearly stated or strongly implied by the contact. Do NOT speculate, infer mood, or summarize events.
+- Facts must be about the CONTACT, not about "You" (the archive owner).
+- If there are no durable facts, return [].`
+
+// rawFact is the model's per-fact JSON shape.
+type rawFact struct {
+	Fact     string `json:"fact"`
+	Category string `json:"category"`
+	Evidence int    `json:"evidence"`
+}
+
+// parsedFact is a validated fact bound to its supporting message.
+type parsedFact struct {
+	Fact     string
+	Category string
+	Msg      store.MessageView
+}
+
+// buildPrompt renders the numbered transcript the model sees. Only included
+// (real) messages appear; their 1-based position is the evidence index the model
+// cites. The owner is labeled "You" so the model can tell the contact apart.
+func buildPrompt(contact string, included []store.MessageView) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Contact: %s\n\nMessages:\n", contact)
+	for i, m := range included {
+		who := contact
+		if m.IsOwner {
+			who = "You"
+		}
+		date := m.TS
+		if len(date) >= 10 {
+			date = date[:10]
+		}
+		fmt.Fprintf(&b, "%d. [%s] %s: %s\n", i+1, date, who, strings.TrimSpace(m.Body))
+	}
+	return b.String()
+}
+
+// parseFacts turns a raw model response into validated facts bound to messages.
+// It tolerates code fences and surrounding prose by extracting the outermost
+// JSON array. Unknown categories become "other"; an out-of-range evidence index
+// falls back to the last included message so every fact keeps provenance.
+func parseFacts(raw string, included []store.MessageView) ([]parsedFact, error) {
+	if len(included) == 0 {
+		return nil, nil
+	}
+	body := extractJSONArray(raw)
+	if body == "" {
+		return nil, fmt.Errorf("no JSON array in model response")
+	}
+	var rawFacts []rawFact
+	if err := json.Unmarshal([]byte(body), &rawFacts); err != nil {
+		return nil, fmt.Errorf("parse facts JSON: %w", err)
+	}
+	out := make([]parsedFact, 0, len(rawFacts))
+	for _, rf := range rawFacts {
+		fact := strings.TrimSpace(rf.Fact)
+		if fact == "" {
+			continue
+		}
+		cat := strings.ToLower(strings.TrimSpace(rf.Category))
+		if !isKnownCategory(cat) {
+			cat = "other"
+		}
+		// Map the 1-based evidence index onto the included slice; clamp out-of-
+		// range (or missing, i.e. 0) citations to the last message so provenance
+		// is always present rather than dangling.
+		idx := rf.Evidence - 1
+		if idx < 0 || idx >= len(included) {
+			idx = len(included) - 1
+		}
+		out = append(out, parsedFact{Fact: fact, Category: cat, Msg: included[idx]})
+	}
+	return out, nil
+}
+
+// extractJSONArray returns the substring from the first '[' to the last ']',
+// stripping markdown fences and prose the model may have added. Returns "" when
+// no array is present.
+func extractJSONArray(s string) string {
+	s = strings.TrimSpace(s)
+	start := strings.IndexByte(s, '[')
+	end := strings.LastIndexByte(s, ']')
+	if start < 0 || end < 0 || end < start {
+		return ""
+	}
+	return s[start : end+1]
+}
+
+// Options configures a facts run.
+type Options struct {
+	// Model is the chat model used for extraction; recorded with each fact and in
+	// the cursor so a model change re-scans. Required.
+	Model string
+	// BatchSize is how many messages are sent per extraction call.
+	BatchSize int
+	// Concurrency is how many conversations are processed in parallel.
+	Concurrency int
+	// Exclude is the conversation-name denylist (journal.exclude_conversations);
+	// matching conversations are never sent to the LLM.
+	Exclude []string
+	// OnlyConversationID, when > 0, limits the run to a single conversation.
+	OnlyConversationID int64
+	// Reset wipes all stored facts and cursors before running.
+	Reset bool
+	// Temperature for the extraction call (low keeps facts deterministic).
+	Temperature float32
+	// MaxTokens caps the extraction response.
+	MaxTokens int
+	// Logger receives progress; defaults to slog.Default().
+	Logger *slog.Logger
+}
+
+// Summary reports what a facts run did.
+type Summary struct {
+	Conversations  int
+	MessagesParsed int
+	FactsAdded     int
+	Batches        int
+	DurationMS     int64
+}
+
+// Run extracts facts from every eligible conversation (incrementally, honoring
+// the exclude list) using bounded concurrency. A per-batch LLM failure aborts
+// the run; because the cursor is persisted after each batch, the next run
+// resumes where this one stopped.
+func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (Summary, error) {
+	log := opts.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	model := strings.TrimSpace(opts.Model)
+	if model == "" {
+		return Summary{}, fmt.Errorf("facts: model not configured (set llm.chat_model)")
+	}
+	batch := opts.BatchSize
+	if batch <= 0 || batch > 200 {
+		batch = 60
+	}
+	workers := opts.Concurrency
+	if workers <= 0 {
+		workers = 4
+	}
+	start := time.Now()
+
+	if opts.Reset {
+		if err := st.ResetFacts(ctx); err != nil {
+			return Summary{}, err
+		}
+		log.Info("facts reset: cleared existing facts and cursors")
+	}
+
+	convs, err := st.FactConversations(ctx, opts.Exclude)
+	if err != nil {
+		return Summary{}, err
+	}
+	if opts.OnlyConversationID > 0 {
+		filtered := convs[:0]
+		for _, c := range convs {
+			if c.ID == opts.OnlyConversationID {
+				filtered = append(filtered, c)
+			}
+		}
+		convs = filtered
+	}
+	if len(convs) == 0 {
+		log.Info("facts: no eligible conversations")
+		return Summary{DurationMS: time.Since(start).Milliseconds()}, nil
+	}
+	log.Info("extracting facts", "model", model, "conversations", len(convs), "batch_size", batch, "workers", workers)
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		mu      sync.Mutex
+		sum     Summary
+		firstEr error
+		once    sync.Once
+	)
+	fail := func(err error) {
+		once.Do(func() { firstEr = err; cancel() })
+	}
+
+	jobs := make(chan store.FactConversation)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for fc := range jobs {
+				cs, err := processConversation(runCtx, st, client, model, batch, opts, fc, log)
+				if err != nil {
+					fail(err)
+					return
+				}
+				mu.Lock()
+				sum.Conversations++
+				sum.MessagesParsed += cs.MessagesParsed
+				sum.FactsAdded += cs.FactsAdded
+				sum.Batches += cs.Batches
+				mu.Unlock()
+			}
+		}()
+	}
+feed:
+	for _, fc := range convs {
+		select {
+		case <-runCtx.Done():
+			break feed
+		case jobs <- fc:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	if firstEr != nil {
+		return sum, firstEr
+	}
+	sum.DurationMS = time.Since(start).Milliseconds()
+	log.Info("facts complete", "facts_added", sum.FactsAdded, "messages_parsed", sum.MessagesParsed,
+		"conversations", sum.Conversations, "batches", sum.Batches, "duration_ms", sum.DurationMS)
+	return sum, nil
+}
+
+// convStats is the per-conversation tally aggregated into the run Summary.
+type convStats struct {
+	MessagesParsed int
+	FactsAdded     int
+	Batches        int
+}
+
+// processConversation walks one conversation from its stored cursor, extracting
+// and storing facts batch by batch and advancing the cursor after each batch.
+func processConversation(ctx context.Context, st *store.Store, client llm.Client, model string, batch int, opts Options, fc store.FactConversation, log *slog.Logger) (convStats, error) {
+	var stats convStats
+
+	// Resolve the resume point. A different stored model means the contact was
+	// last analyzed by another model: re-scan from the start (dedup keeps it
+	// safe) so the new model can re-derive everything.
+	var cursorTS, cursorID int64
+	if lastHash, stModel, ok, err := st.GetFactState(ctx, fc.ID); err != nil {
+		return stats, err
+	} else if ok && stModel == model {
+		if ts, id, found, err := st.ResolveCursor(ctx, fc.ID, lastHash); err != nil {
+			return stats, err
+		} else if found {
+			cursorTS, cursorID = ts, id
+		}
+	}
+
+	const maxBatches = 100_000 // defensive backstop; the cursor always advances
+	for b := 0; b < maxBatches; b++ {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
+		page, err := st.GetMessages(ctx, fc.ID, cursorTS, cursorID, batch)
+		if err != nil {
+			return stats, err
+		}
+		if len(page.Messages) == 0 {
+			break
+		}
+		lastHash := page.Messages[len(page.Messages)-1].Hash
+
+		included := realMessages(page.Messages)
+		added := 0
+		if len(included) > 0 {
+			parsed, err := extract(ctx, client, model, opts, fc.Name, included)
+			if err != nil {
+				return stats, fmt.Errorf("conversation %q (%s): %w", fc.Name, fc.Source, err)
+			}
+			stats.MessagesParsed += len(included)
+			for _, pf := range parsed {
+				ok, err := st.PutFact(ctx, store.FactInput{
+					ContactID:         fc.ContactID,
+					Fact:              pf.Fact,
+					Category:          pf.Category,
+					Source:            fc.Source,
+					SourceMessageHash: pf.Msg.Hash,
+					SourceTS:          pf.Msg.TS,
+					SourceTSUnix:      pf.Msg.TSUnix,
+					Model:             model,
+				})
+				if err != nil {
+					return stats, err
+				}
+				if ok {
+					added++
+				}
+			}
+			stats.FactsAdded += added
+			stats.Batches++
+		}
+		// Advance the cursor past this batch (even an all-system batch) so the
+		// next run does not reprocess it.
+		if err := st.SetFactState(ctx, fc.ID, lastHash, model, added); err != nil {
+			return stats, err
+		}
+		cursorTS, cursorID = page.NextTSUnix, page.NextID
+		if !page.HasMore {
+			break
+		}
+	}
+	if stats.FactsAdded > 0 {
+		log.Debug("extracted facts", "conversation", fc.Name, "source", fc.Source, "facts_added", stats.FactsAdded)
+	}
+	return stats, nil
+}
+
+// extract calls the LLM for one batch and parses the response into facts.
+func extract(ctx context.Context, client llm.Client, model string, opts Options, contact string, included []store.MessageView) ([]parsedFact, error) {
+	resp, err := client.Chat(ctx, llm.ChatRequest{
+		Model:       model,
+		Temperature: opts.Temperature,
+		MaxTokens:   opts.MaxTokens,
+		Messages: []llm.Message{
+			{Role: llm.RoleSystem, Content: systemPrompt},
+			{Role: llm.RoleUser, Content: buildPrompt(contact, included)},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseFacts(resp, included)
+}
+
+// realMessages drops system messages and empty bodies — there is nothing to
+// extract from them, and excluding them keeps the evidence indices meaningful.
+func realMessages(msgs []store.MessageView) []store.MessageView {
+	out := make([]store.MessageView, 0, len(msgs))
+	for _, m := range msgs {
+		if m.IsSystem || strings.TrimSpace(m.Body) == "" {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}

@@ -21,11 +21,11 @@ import (
 	"github.com/joestump/sigbrowse/internal/store"
 )
 
-// exportDir is the archive subdirectory holding per-conversation folders.
-const exportDir = "export"
+// ExportDir is the archive subdirectory holding per-conversation folders.
+const ExportDir = "export"
 
-// chatFile is the conversation transcript filename within each conversation folder.
-const chatFile = "chat.md"
+// ChatFile is the conversation transcript filename within each conversation folder.
+const ChatFile = "chat.md"
 
 // Options configures an ingest run.
 type Options struct {
@@ -59,7 +59,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	run := store.IngestRun{StartedAt: start}
 
 	// 1. Conversations.
-	convRoot := filepath.Join(opts.ArchiveRoot, exportDir)
+	convRoot := filepath.Join(opts.ArchiveRoot, ExportDir)
 	entries, err := os.ReadDir(convRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -73,7 +73,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 			continue
 		}
 		name := e.Name()
-		chatPath := filepath.Join(convRoot, name, chatFile)
+		chatPath := filepath.Join(convRoot, name, ChatFile)
 		info, statErr := os.Stat(chatPath)
 		if statErr != nil {
 			// A conversation folder without a chat.md is simply skipped.
@@ -186,7 +186,7 @@ func ingestConversation(
 	}
 	if err = st.SetIngestState(ctx, store.IngestState{
 		ConversationID: convID,
-		RelPath:        filepath.Join(exportDir, name, chatFile),
+		RelPath:        filepath.Join(ExportDir, name, ChatFile),
 		MTimeUnix:      mtime,
 		SizeBytes:      size,
 		ContentHash:    contentHash,

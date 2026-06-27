@@ -12,6 +12,7 @@
   <aside class="sidebar">
     <div class="brand"><a href="/">msgbrowse</a></div>
     <nav class="sidebar-nav">
+      <a href="/search">Search</a>
       <a href="/status">Status &amp; backups</a>
     </nav>
     <div class="conv-list">
@@ -44,7 +45,7 @@
 
 {{define "message_list"}}
 {{- range .Messages}}
-  <article class="msg {{if .IsOwner}}owner{{else if .IsSystem}}system{{end}}" id="m{{.ID}}">
+  <article class="msg {{if .IsOwner}}owner{{else if .IsSystem}}system{{end}}{{if and $.HighlightID (eq .ID $.HighlightID)}} target{{end}}" id="m{{.ID}}">
     {{- if not .IsSystem}}
     <div class="msg-meta"><span class="msg-sender">{{.Sender}}</span> <span class="msg-time">{{.TS}}</span></div>
     {{- end}}

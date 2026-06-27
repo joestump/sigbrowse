@@ -396,6 +396,22 @@ func (s *Store) ListSnapshots(ctx context.Context) ([]Snapshot, error) {
 	return out, rows.Err()
 }
 
+// MessageConversationID returns the id of the conversation that owns the given
+// message, or (0, false) if no such message exists. Used to verify that a
+// jump-to-context request's message actually belongs to the URL's conversation.
+func (s *Store) MessageConversationID(ctx context.Context, messageID int64) (int64, bool, error) {
+	var convID int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT conversation_id FROM messages WHERE id = ?`, messageID).Scan(&convID)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return convID, true, nil
+}
+
 // NewestMessageTS returns the latest message timestamp across all conversations
 // ("" if the database is empty) — used to show export freshness.
 func (s *Store) NewestMessageTS(ctx context.Context) (string, error) {

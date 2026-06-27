@@ -18,11 +18,12 @@ type baseData struct {
 // messageListData drives the transcript message list and its infinite-scroll
 // sentinel (used both in the full page and the HTMX partial).
 type messageListData struct {
-	ActiveID   int64
-	Messages   []store.MessageView
-	HasMore    bool
-	NextTSUnix int64
-	NextID     int64
+	ActiveID    int64
+	Messages    []store.MessageView
+	HasMore     bool
+	NextTSUnix  int64
+	NextID      int64
+	HighlightID int64 // marks the jump-to-context target message (0 = none)
 }
 
 type indexData struct {

@@ -429,6 +429,41 @@ func (s *Store) ListSnapshots(ctx context.Context) ([]Snapshot, error) {
 	return out, rows.Err()
 }
 
+// ContactIdentifier is one source-side handle for a contact (e.g. a phone
+// number or email from iMessage, or a Signal display name).
+type ContactIdentifier struct {
+	Source     string
+	Identifier string
+}
+
+// ConversationIdentifiers returns the identifiers of the contact linked to the
+// given conversation, ordered by source then identifier. Returns nil when the
+// conversation has no linked contact (e.g. a group). The conversation's own
+// name is excluded so a Signal conversation doesn't list its display name back
+// as a redundant identifier; cross-source handles (an iMessage phone/email
+// merged onto the same contact) are what this surfaces.
+func (s *Store) ConversationIdentifiers(ctx context.Context, convID int64) ([]ContactIdentifier, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT ci.source, ci.identifier
+  FROM conversations c
+  JOIN contact_identifiers ci ON ci.contact_id = c.contact_id
+ WHERE c.id = ? AND ci.identifier <> c.name
+ ORDER BY ci.source, ci.identifier`, convID)
+	if err != nil {
+		return nil, fmt.Errorf("conversation identifiers: %w", err)
+	}
+	defer rows.Close()
+	var out []ContactIdentifier
+	for rows.Next() {
+		var ci ContactIdentifier
+		if err := rows.Scan(&ci.Source, &ci.Identifier); err != nil {
+			return nil, err
+		}
+		out = append(out, ci)
+	}
+	return out, rows.Err()
+}
+
 // MessageConversationID returns the id of the conversation that owns the given
 // message, or (0, false) if no such message exists. Used to verify that a
 // jump-to-context request's message actually belongs to the URL's conversation.

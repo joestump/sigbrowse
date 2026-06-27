@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -110,22 +109,31 @@ SELECT m.conversation_id, c.name, m.source, m.id, a.kind, a.rel_path, a.original
 }
 
 // ListLinks returns links matching the filter, deduplicated by URL. Each item
-// carries its occurrence count and the earliest message it appeared in. Results
-// are ordered by domain, then by descending occurrence count.
+// carries its total occurrence count and the earliest message it appeared in.
+// Results are ordered by domain, then descending occurrence count.
+//
+// Dedup, count, and earliest-occurrence are computed in SQL via window
+// functions so the result is exact regardless of archive size (an earlier
+// scan-into-a-map approach silently corrupted counts past a row cap). The inner
+// query tags each link row with its per-URL count and a rank by (ts_unix, id);
+// the outer query keeps rank 1 (the earliest) per URL.
 func (s *Store) ListLinks(ctx context.Context, f GalleryFilter) ([]LinkItem, error) {
 	whereSQL, args := galleryWhere(f)
-	// Pull matching links oldest-first so the first time we see a URL is its
-	// earliest occurrence; dedup and count in Go. Capped to bound memory.
-	const scanCap = 5000
 	q := `
-SELECT l.url, l.domain, m.conversation_id, c.name, m.source, m.id, m.ts, m.ts_unix
-  FROM links l
-  JOIN messages m      ON m.id = l.message_id
-  JOIN conversations c ON c.id = m.conversation_id
- WHERE ` + whereSQL + `
- ORDER BY m.ts_unix ASC, m.id ASC, l.id ASC
- LIMIT ?`
-	args = append(args, scanCap)
+SELECT url, domain, cnt, conversation_id, name, source, message_id, ts, ts_unix
+  FROM (
+    SELECT l.url AS url, l.domain AS domain,
+           COUNT(*)     OVER (PARTITION BY l.url) AS cnt,
+           ROW_NUMBER() OVER (PARTITION BY l.url ORDER BY m.ts_unix ASC, m.id ASC, l.id ASC) AS rn,
+           m.conversation_id AS conversation_id, c.name AS name, m.source AS source,
+           m.id AS message_id, m.ts AS ts, m.ts_unix AS ts_unix
+      FROM links l
+      JOIN messages m      ON m.id = l.message_id
+      JOIN conversations c ON c.id = m.conversation_id
+     WHERE ` + whereSQL + `
+  )
+ WHERE rn = 1
+ ORDER BY domain ASC, cnt DESC, ts_unix ASC`
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -133,47 +141,16 @@ SELECT l.url, l.domain, m.conversation_id, c.name, m.source, m.id, m.ts, m.ts_un
 	}
 	defer rows.Close()
 
-	byURL := make(map[string]*LinkItem)
-	var order []string
+	var out []LinkItem
 	for rows.Next() {
-		var (
-			url, domain, name, src, ts string
-			convID, msgID, tsUnix      int64
-		)
-		if err := rows.Scan(&url, &domain, &convID, &name, &src, &msgID, &ts, &tsUnix); err != nil {
+		var li LinkItem
+		if err := rows.Scan(&li.URL, &li.Domain, &li.Count, &li.ConversationID,
+			&li.ConversationName, &li.Source, &li.MessageID, &li.TS, &li.TSUnix); err != nil {
 			return nil, err
 		}
-		if li, ok := byURL[url]; ok {
-			li.Count++
-			continue
-		}
-		byURL[url] = &LinkItem{
-			URL: url, Domain: domain, Count: 1,
-			ConversationID: convID, ConversationName: name, Source: src,
-			MessageID: msgID, TS: ts, TSUnix: tsUnix,
-		}
-		order = append(order, url)
+		out = append(out, li)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	out := make([]LinkItem, 0, len(order))
-	for _, u := range order {
-		out = append(out, *byURL[u])
-	}
-	// Stable order: domain asc, then most-frequent first, then earliest.
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		if a.Domain != b.Domain {
-			return a.Domain < b.Domain
-		}
-		if a.Count != b.Count {
-			return a.Count > b.Count
-		}
-		return a.TSUnix < b.TSUnix
-	})
-	return out, nil
+	return out, rows.Err()
 }
 
 // MediaCounts is the per-tab totals shown on the gallery (so empty tabs are

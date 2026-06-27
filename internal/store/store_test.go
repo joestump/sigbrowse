@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -228,6 +229,52 @@ func TestUpsertConversationBootstrapsContact(t *testing.T) {
 	}
 	if n := scalar(t, st, `SELECT count(*) FROM contact_identifiers`); n != 1 {
 		t.Errorf("re-upsert created extra contact_identifiers: %d", n)
+	}
+}
+
+// TestUpsertConversationConcurrent is a regression test for the deferred-tx
+// lock-upgrade hazard: a SELECT-then-INSERT inside a deferred transaction holds
+// a shared lock and then upgrades to a write lock, and SQLite returns
+// SQLITE_BUSY for an upgrade without honoring busy_timeout. The fix is
+// _txlock=immediate (see Open). Many goroutines upserting the same and distinct
+// (source, name) pairs must all succeed and converge on stable ids, with no
+// "database is locked" error and no duplicate contacts.
+func TestUpsertConversationConcurrent(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	const workers = 24
+	names := []string{"MJ", "Harper", "Group Trip"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*len(names))
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, n := range names {
+				if _, err := st.UpsertConversation(ctx, source.Signal, n); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent UpsertConversation: %v", err)
+	}
+
+	// Exactly one conversation and one contact per distinct name — no dupes from
+	// racing inserts.
+	if n := scalar(t, st, `SELECT count(*) FROM conversations`); n != len(names) {
+		t.Errorf("conversations = %d, want %d", n, len(names))
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contacts`); n != len(names) {
+		t.Errorf("contacts = %d, want %d", n, len(names))
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contact_identifiers`); n != len(names) {
+		t.Errorf("contact_identifiers = %d, want %d", n, len(names))
 	}
 }
 

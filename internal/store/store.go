@@ -32,6 +32,16 @@ func Open(path string) (*Store, error) {
 		"_journal_mode": {"WAL"},
 		"_foreign_keys": {"ON"},
 		"_synchronous":  {"NORMAL"},
+		// Every explicit transaction in this package is a writer
+		// (UpsertConversation, ReplaceConversationMessages, ReplaceSnapshots,
+		// and the migration runner). Begin them in IMMEDIATE mode so they take
+		// the write lock up front. A deferred transaction that SELECTs then
+		// INSERTs would hold a shared lock and then try to upgrade it; SQLite
+		// returns SQLITE_BUSY for a lock UPGRADE without honoring busy_timeout,
+		// so two concurrent upserts could spuriously fail. IMMEDIATE makes
+		// busy_timeout apply to the initial acquisition instead. Autocommit
+		// read queries (QueryContext) are unaffected by this setting.
+		"_txlock": {"immediate"},
 	}.Encode()
 
 	db, err := sql.Open("sqlite3", dsn)

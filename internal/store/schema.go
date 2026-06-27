@@ -134,20 +134,20 @@ END;
 // The runner toggles foreign keys off around the apply (SQLite's recommended
 // pattern for rebuilding a referenced table) and back on afterward.
 const schemaV2 = `
-CREATE TABLE contacts (
+CREATE TABLE IF NOT EXISTS contacts (
     id           INTEGER PRIMARY KEY,
     display_name TEXT    NOT NULL,
     notes        TEXT    NOT NULL DEFAULT ''
 );
 
-CREATE TABLE contact_identifiers (
+CREATE TABLE IF NOT EXISTS contact_identifiers (
     id         INTEGER PRIMARY KEY,
     contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     source     TEXT    NOT NULL,
     identifier TEXT    NOT NULL,
     UNIQUE(source, identifier)
 );
-CREATE INDEX idx_contact_identifiers_contact ON contact_identifiers(contact_id);
+CREATE INDEX IF NOT EXISTS idx_contact_identifiers_contact ON contact_identifiers(contact_id);
 
 CREATE TABLE conversations_new (
     id         INTEGER PRIMARY KEY,
@@ -165,6 +165,14 @@ ALTER TABLE conversations_new RENAME TO conversations;
 ALTER TABLE messages    ADD COLUMN source TEXT NOT NULL DEFAULT 'signal';
 ALTER TABLE ingest_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'signal';
 
+-- Bootstrap one contact per existing conversation. Matching by display_name is
+-- safe ONLY here: at v1 conversations.name was UNIQUE, and this migration sees
+-- Signal data exclusively, so the name→contact join is unambiguous and the
+-- LIMIT 1 never discards a distinct person. DO NOT copy this match-by-name
+-- pattern into the iMessage importer (Slice 2.5): once two sources share a
+-- display_name it would silently merge two different people. Cross-source
+-- linking is a deliberate, user-confirmed action on the contacts page
+-- (ADR-0003), never a name-equality heuristic.
 INSERT INTO contacts (display_name)
     SELECT name FROM conversations;
 UPDATE conversations

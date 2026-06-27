@@ -8,6 +8,7 @@ import (
 
 	"github.com/joestump/sigbrowse/internal/config"
 	"github.com/joestump/sigbrowse/internal/ingest"
+	"github.com/joestump/sigbrowse/internal/store"
 	"github.com/joestump/sigbrowse/internal/web"
 	"github.com/spf13/cobra"
 )
@@ -39,7 +40,7 @@ func newServeCommand() *cobra.Command {
 			defer stop()
 
 			if cfg.IngestOnStart {
-				if err := ingestOnStart(ctx, cfg); err != nil {
+				if err := ingestOnStart(ctx, st, cfg); err != nil {
 					slog.Warn("ingest-on-start failed; serving existing data", "error", err)
 				}
 			}
@@ -56,16 +57,13 @@ func newServeCommand() *cobra.Command {
 }
 
 // ingestOnStart runs a best-effort ingest pass before serving, when configured
-// and an archive is available.
-func ingestOnStart(ctx context.Context, cfg *config.Config) error {
+// and an archive is available. The store handle from serve is reused; opening a
+// second connection to the same SQLite file works (WAL handles it) but muddles
+// ownership.
+func ingestOnStart(ctx context.Context, st *store.Store, cfg *config.Config) error {
 	if err := requireArchive(cfg); err != nil {
 		return err
 	}
-	st, err := openStore(cfg)
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	_, err = ingest.Run(ctx, st, ingest.Options{ArchiveRoot: cfg.ArchiveRoot})
+	_, err := ingest.Run(ctx, st, ingest.Options{ArchiveRoot: cfg.ArchiveRoot})
 	return err
 }

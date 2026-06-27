@@ -155,7 +155,13 @@ func ingestConversation(
 	mtime := info.ModTime().Unix()
 	size := info.Size()
 
-	// Fast path: unchanged metadata means unchanged content; skip without hashing.
+	// Fast path: unchanged (mtime, size) means unchanged content; skip without
+	// hashing. This is a deliberate optimization over the strict "always hash"
+	// reading of the brief — real-world edits to a chat.md change at least the
+	// mtime and almost always the size. A pathological edit that preserves both
+	// (e.g. an in-place byte swap of equal length) will not be re-ingested
+	// until `ingest --full` rescues it; that escape hatch is the contract for
+	// any caller who suspects out-of-band edits.
 	if !opts.Full && prev != nil && prev.MTimeUnix == mtime && prev.SizeBytes == size {
 		return false, 0, 0, nil
 	}

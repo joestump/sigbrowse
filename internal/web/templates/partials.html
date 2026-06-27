@@ -54,7 +54,7 @@
     <div class="msg-media">
       {{- range .Attachments}}
         {{- if eq .Kind "image"}}
-        <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener">
+        <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener noreferrer nofollow">
           <img class="thumb" loading="lazy" src="{{mediaURL $.ActiveID .RelPath}}" alt="{{.OriginalName}}">
         </a>
         {{- else}}

@@ -50,10 +50,17 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Inline images; force download for everything else. The CSP already blocks
-	// active content, and nosniff prevents type confusion.
-	if isImageExt(full) {
+	// active content, and nosniff prevents type confusion. SVG is deliberately
+	// NOT inlined (it can carry script), even though isImageExt returns false
+	// for it via the map — the explicit guard below makes the intent obvious to
+	// a future reader who might "clean up" the map entry.
+	ext := strings.ToLower(filepath.Ext(full))
+	switch {
+	case ext == ".svg":
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(full)+"\"")
+	case isImageExt(full):
 		w.Header().Set("Content-Disposition", "inline")
-	} else {
+	default:
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(full)+"\"")
 	}
 	// http.ServeContent sets Content-Type from the extension (and sniffs if
@@ -82,10 +89,12 @@ func safeMediaPath(archiveRoot, convName, rel string) (string, bool) {
 	return full, true
 }
 
-// imageExts are the extensions served inline.
+// imageExts are the extensions served inline. SVG is intentionally absent: the
+// caller handles it with an explicit guard so a future "let's add svg to the
+// map" PR cannot accidentally re-enable inline serving of script-capable SVGs.
 var imageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
-	".webp": true, ".bmp": true, ".svg": false, // svg can carry script; never inline
+	".webp": true, ".bmp": true,
 }
 
 func isImageExt(path string) bool {

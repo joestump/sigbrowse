@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/joestump/sigbrowse/internal/signal"
 )
 
 // ConversationSummary is the sidebar/overview view of a conversation.
@@ -58,10 +60,6 @@ type Page struct {
 	NextID     int64
 	HasMore    bool
 }
-
-// ownerSender mirrors signal.OwnerSender without importing it here (avoids a
-// cycle-free but unnecessary dependency for one constant).
-const ownerSender = "Me"
 
 // ListConversations returns every conversation with summary stats, ordered by
 // most-recent activity first. Conversations with no messages sort last.
@@ -210,7 +208,7 @@ func (s *Store) GetMessages(ctx context.Context, convID, afterTSUnix, afterID in
 			return nil, err
 		}
 		m.IsSystem = isSystem == 1
-		m.IsOwner = m.Sender == ownerSender
+		m.IsOwner = m.Sender == signal.OwnerSender
 		msgs = append(msgs, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -292,7 +290,7 @@ func (s *Store) queryMessages(ctx context.Context, q string, args ...any) ([]Mes
 			return nil, err
 		}
 		m.IsSystem = isSystem == 1
-		m.IsOwner = m.Sender == ownerSender
+		m.IsOwner = m.Sender == signal.OwnerSender
 		out = append(out, m)
 	}
 	return out, rows.Err()

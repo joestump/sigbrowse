@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/joestump/msgbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // bodyTokenRe matches, in priority order, a Markdown image, a Markdown link, or
@@ -114,3 +115,17 @@ func humanSize(n int64) string {
 
 // domainOf is a thin wrapper so templates can group links by domain.
 func domainOf(rawurl string) string { return signal.Domain(rawurl) }
+
+// highlightSnippet converts an FTS5 snippet (whose matched terms are wrapped in
+// store.SnippetMark{Start,End} control characters) into safe highlighted HTML.
+// The whole snippet is HTML-escaped first — so the untrusted body text can never
+// inject markup — and only then are the (escape-surviving) control-char
+// sentinels replaced with <mark>…</mark>. Newlines become spaces to keep result
+// rows single-line.
+func highlightSnippet(snippet string) template.HTML {
+	escaped := html.EscapeString(snippet)
+	escaped = strings.ReplaceAll(escaped, store.SnippetMarkStart, "<mark>")
+	escaped = strings.ReplaceAll(escaped, store.SnippetMarkEnd, "</mark>")
+	escaped = strings.ReplaceAll(escaped, "\n", " ")
+	return template.HTML(escaped)
+}

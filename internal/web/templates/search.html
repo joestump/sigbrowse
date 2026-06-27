@@ -1,0 +1,79 @@
+{{define "search"}}{{template "page_start" .}}
+  <header class="conv-header">
+    <h1>Search</h1>
+    <div class="muted">Full-text keyword search across all messages.</div>
+  </header>
+
+  {{/* The form submits to /search (works without JS); HTMX upgrades it to live,
+       partial updates into #search-results as you type or change a filter. */}}
+  <form class="search-form" action="/search" method="get"
+        hx-get="/search/results" hx-target="#search-results" hx-swap="innerHTML"
+        hx-trigger="input changed delay:300ms, change">
+    <input class="search-q" type="search" name="q" value="{{.Form.Q}}"
+           placeholder="Search messages…" autofocus autocomplete="off">
+
+    <div class="search-filters">
+      <label>Conversation
+        <select name="conversation">
+          <option value="">Any</option>
+          {{- range .Conversations}}
+          <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{.Name}}</option>
+          {{- end}}
+        </select>
+      </label>
+      <label>Source
+        <select name="source">
+          <option value="">Any</option>
+          {{- range .Sources}}
+          <option value="{{.}}" {{if eq . $.Form.Source}}selected{{end}}>{{.}}</option>
+          {{- end}}
+        </select>
+      </label>
+      <label>Sender
+        <input type="text" name="sender" value="{{.Form.Sender}}" placeholder="exact name" autocomplete="off">
+      </label>
+      <label>From
+        <input type="date" name="start" value="{{.Form.Start}}">
+      </label>
+      <label>To
+        <input type="date" name="end" value="{{.Form.End}}">
+      </label>
+      <label class="check"><input type="checkbox" name="has_attachment" value="1" {{if .Form.HasAttachment}}checked{{end}}> Has attachment</label>
+      <label class="check"><input type="checkbox" name="has_link" value="1" {{if .Form.HasLink}}checked{{end}}> Has link</label>
+      <button type="submit">Search</button>
+    </div>
+  </form>
+
+  <section id="search-results">
+    {{template "search_results" .}}
+  </section>
+{{template "page_end" .}}{{end}}
+
+{{define "search_results"}}
+  {{- if .Ran}}
+    {{- if .Hits}}
+    <div class="search-count muted">{{.Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} (showing first 200){{end}}</div>
+    <ol class="search-hits">
+      {{- range .Hits}}
+      <li class="hit">
+        <a class="hit-link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">
+          <div class="hit-meta">
+            <span class="hit-conv">{{.ConversationName}}</span>
+            <span class="hit-sender">{{if .IsOwner}}Me{{else}}{{.Sender}}{{end}}</span>
+            <span class="hit-time muted">{{.TS}}</span>
+            <span class="hit-source muted">{{.Source}}</span>
+            {{- if .HasAttachment}}<span class="badge" title="has attachment">📎</span>{{end}}
+            {{- if .HasLink}}<span class="badge" title="has link">🔗</span>{{end}}
+          </div>
+          <div class="hit-snippet">{{highlightSnippet .Snippet}}</div>
+        </a>
+      </li>
+      {{- end}}
+    </ol>
+    {{- else}}
+    <div class="search-empty muted">No messages match your search.</div>
+    {{- end}}
+  {{- else}}
+    <div class="search-hint muted">Type a query above to search your messages.</div>
+  {{- end}}
+{{end}}

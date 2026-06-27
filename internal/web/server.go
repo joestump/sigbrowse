@@ -44,10 +44,11 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 		log = slog.Default()
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"renderBody": renderBody,
-		"mediaURL":   mediaURL,
-		"humanSize":  humanSize,
-		"domainOf":   domainOf,
+		"renderBody":       renderBody,
+		"mediaURL":         mediaURL,
+		"humanSize":        humanSize,
+		"domainOf":         domainOf,
+		"highlightSnippet": highlightSnippet,
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -68,8 +69,11 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheStatic(http.FileServer(http.FS(staticSub)))))
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /search", s.handleSearch)
+	mux.HandleFunc("GET /search/results", s.handleSearchResults)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
+	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)
 

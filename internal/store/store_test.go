@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/signal"
 )
 
 func newTestStore(t *testing.T) *Store {

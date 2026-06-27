@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/config"
-	"github.com/joestump/sigbrowse/internal/ingest"
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // newTestServer ingests the committed fixture archive into a temp store and
@@ -60,7 +60,7 @@ func TestIndexListsConversations(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Harper", "Group Trip", "sigbrowse"} {
+	for _, want := range []string{"Harper", "Group Trip", "msgbrowse"} {
 		if !contains(body, want) {
 			t.Errorf("index missing %q", want)
 		}

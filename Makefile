@@ -1,15 +1,15 @@
-# sigbrowse Makefile
+# msgbrowse Makefile
 #
 # Common targets:
-#   make build     build the sigbrowse binary into ./bin
+#   make build     build the msgbrowse binary into ./bin
 #   make test      run the test suite
 #   make check     gofmt + go vet + tests (CI gate)
 #   make up        bring up the Docker compose stack
 #   make ingest    run an ingest pass inside the container
 #   make journal   rebuild the journal (mechanical + digests)
 
-BINARY      := sigbrowse
-PKG         := github.com/joestump/sigbrowse
+BINARY      := msgbrowse
+PKG         := github.com/joestump/msgbrowse
 BIN_DIR     := bin
 VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -30,7 +30,7 @@ export CGO_ENABLED = 1
 all: check build
 
 build: ## Build the binary
-	$(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/sigbrowse
+	$(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/msgbrowse
 
 run: build ## Build then run the web UI
 	$(BIN_DIR)/$(BINARY) serve
@@ -66,7 +66,7 @@ down: ## Stop the Docker compose stack
 	docker compose down
 
 ingest: ## Run an ingest pass in the container
-	docker compose run --rm sigbrowse ingest
+	docker compose run --rm msgbrowse ingest
 
 journal: ## Rebuild the journal in the container
-	docker compose run --rm sigbrowse journal
+	docker compose run --rm msgbrowse journal

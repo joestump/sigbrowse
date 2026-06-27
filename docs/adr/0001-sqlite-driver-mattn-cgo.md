@@ -5,7 +5,7 @@
 
 ## Context and Problem Statement
 
-sigbrowse stores everything in a single SQLite database and needs both FTS5
+msgbrowse stores everything in a single SQLite database and needs both FTS5
 (keyword search) and, later, a vector index (`sqlite-vec` / vec0) in that same
 file. Which Go SQLite driver gives us FTS5 now and a viable path to in-process
 vectors, while keeping the container image small and ideally cgo-free?

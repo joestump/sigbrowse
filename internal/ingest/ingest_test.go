@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // fixedNow is the reference time used for deterministic snapshot tier tests.

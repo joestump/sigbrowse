@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/joestump/sigbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/spf13/cobra"
 )
 

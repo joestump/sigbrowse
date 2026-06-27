@@ -1,6 +1,6 @@
 {{define "index"}}{{template "page_start" .}}
   <div class="welcome">
-    <h1>sigbrowse</h1>
+    <h1>msgbrowse</h1>
     {{if .HasArchive}}
     <p class="muted">A local, read-only window into your Signal archive.</p>
     <dl class="stats">
@@ -12,7 +12,7 @@
       <a href="/status">Status &amp; backups</a>.</p>
     {{else}}
     <p class="muted">No messages have been ingested yet.</p>
-    <p class="hint">Run <code>sigbrowse ingest</code> against your archive, then refresh.</p>
+    <p class="hint">Run <code>msgbrowse ingest</code> against your archive, then refresh.</p>
     {{end}}
   </div>
 {{template "page_end" .}}{{end}}

@@ -22,7 +22,7 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "sigbrowse %s (commit %s, built %s, %s)\n",
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "msgbrowse %s (commit %s, built %s, %s)\n",
 				Version, Commit, BuildDate, runtime.Version())
 			return err
 		},

@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 // snapshotsDir is the archive subdirectory holding raw encrypted DB backups.
@@ -21,7 +21,7 @@ var snapshotNameRe = regexp.MustCompile(`^db-(\d{8})-(\d{6})\.tar$`)
 const snapshotTimeLayout = "20060102-150405"
 
 // GFS tier age boundaries, measured from "now". These describe which retention
-// tier a snapshot currently falls into for display purposes; sigbrowse never
+// tier a snapshot currently falls into for display purposes; msgbrowse never
 // creates or prunes snapshots (the upstream backup job does).
 const (
 	dailyMaxAge     = 14 * 24 * time.Hour      // daily backups kept ≤ 14 days

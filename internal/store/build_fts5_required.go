@@ -15,4 +15,4 @@ package store
 //	go build -tags sqlite_fts5 ./...
 //
 // The Makefile sets this for every Go target.
-var _ = sigbrowseRequiresSqliteFts5BuildTag
+var _ = msgbrowseRequiresSqliteFts5BuildTag

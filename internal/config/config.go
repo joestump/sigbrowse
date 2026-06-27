@@ -1,9 +1,9 @@
-// Package config defines sigbrowse's configuration model and the Viper binding
+// Package config defines msgbrowse's configuration model and the Viper binding
 // that loads it from (in increasing order of precedence) built-in defaults, a
-// YAML config file, SIGBROWSE_* environment variables, and command-line flags.
+// YAML config file, MSGBROWSE_* environment variables, and command-line flags.
 //
 // Secrets (notably the LLM API key) are never read from the config file in a way
-// that would encourage committing them; prefer the SIGBROWSE_LLM_API_KEY
+// that would encourage committing them; prefer the MSGBROWSE_LLM_API_KEY
 // environment variable. See SECURITY.md for the egress and secret-handling model.
 package config
 
@@ -15,11 +15,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config is the fully-resolved runtime configuration for every sigbrowse
+// Config is the fully-resolved runtime configuration for every msgbrowse
 // subcommand. Field tags map each key to its Viper/YAML name.
 type Config struct {
 	// ArchiveRoot is the path to the signal-export archive. It is treated as
-	// strictly read-only; sigbrowse never writes inside it.
+	// strictly read-only; msgbrowse never writes inside it.
 	ArchiveRoot string `mapstructure:"archive_root"`
 
 	// DataDir is a writable directory (outside the archive) for the SQLite
@@ -44,7 +44,7 @@ type Config struct {
 	IngestOnStart bool `mapstructure:"ingest_on_start"`
 
 	// Watch enables the fsnotify watcher inside `serve` (equivalent to running
-	// `sigbrowse watch` alongside the server).
+	// `msgbrowse watch` alongside the server).
 	Watch bool `mapstructure:"watch"`
 
 	// LogLevel is one of debug, info, warn, error.
@@ -52,7 +52,7 @@ type Config struct {
 }
 
 // LLMConfig configures the OpenAI-compatible client. BaseURL is the only network
-// egress sigbrowse performs; by default it points at a local LiteLLM proxy.
+// egress msgbrowse performs; by default it points at a local LiteLLM proxy.
 type LLMConfig struct {
 	BaseURL        string        `mapstructure:"base_url"`
 	APIKey         string        `mapstructure:"api_key"`
@@ -62,7 +62,7 @@ type LLMConfig struct {
 	Timeout        time.Duration `mapstructure:"timeout"`
 }
 
-// JournalConfig configures `sigbrowse journal`.
+// JournalConfig configures `msgbrowse journal`.
 type JournalConfig struct {
 	// DigestEnabled turns the LLM digest pass on or off. The mechanical journal
 	// is always written regardless.
@@ -113,16 +113,16 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("log_level", "info")
 }
 
-// Load constructs a *viper.Viper wired for sigbrowse: defaults, optional config
-// file, and SIGBROWSE_* environment variables. cfgFile may be empty, in which
+// Load constructs a *viper.Viper wired for msgbrowse: defaults, optional config
+// file, and MSGBROWSE_* environment variables. cfgFile may be empty, in which
 // case the standard search paths are used. Flags are bound separately by the CLI
 // layer via BindPFlags.
 func Load(cfgFile string) (*viper.Viper, error) {
 	v := viper.New()
 	SetDefaults(v)
 
-	v.SetEnvPrefix("SIGBROWSE")
-	// Map e.g. SIGBROWSE_LLM_API_KEY -> llm.api_key.
+	v.SetEnvPrefix("MSGBROWSE")
+	// Map e.g. MSGBROWSE_LLM_API_KEY -> llm.api_key.
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -132,8 +132,8 @@ func Load(cfgFile string) (*viper.Viper, error) {
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
 		v.AddConfigPath(".")
-		v.AddConfigPath("$HOME/.config/sigbrowse")
-		v.AddConfigPath("/etc/sigbrowse")
+		v.AddConfigPath("$HOME/.config/msgbrowse")
+		v.AddConfigPath("/etc/msgbrowse")
 	}
 
 	if err := v.ReadInConfig(); err != nil {

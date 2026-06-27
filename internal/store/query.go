@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/joestump/sigbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/signal"
 )
 
 // ConversationSummary is the sidebar/overview view of a conversation.

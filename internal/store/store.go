@@ -1,4 +1,4 @@
-// Package store is sigbrowse's persistence layer: a single SQLite database
+// Package store is msgbrowse's persistence layer: a single SQLite database
 // (relational tables + an FTS5 index, with a vector index added in a later
 // slice) that lives in the writable data directory, never inside the read-only
 // archive.
@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/signal"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver (build with -tags sqlite_fts5)
 )
 

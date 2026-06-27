@@ -1,4 +1,4 @@
-// Package web implements sigbrowse's server-rendered HTMX user interface.
+// Package web implements msgbrowse's server-rendered HTMX user interface.
 //
 // It is intentionally minimal: net/http with Go 1.22 pattern routing,
 // html/template for rendering (which auto-escapes all message content), HTMX for
@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/joestump/sigbrowse/internal/config"
-	"github.com/joestump/sigbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/store"
 )
 
 //go:embed templates/*.html

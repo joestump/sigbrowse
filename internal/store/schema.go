@@ -4,7 +4,7 @@ package store
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 3
+const schemaVersion = 4
 
 // migrations is the ordered list of per-version migrations applied on Open.
 // Each entry's index is its version (1-based; index 0 is unused).
@@ -28,6 +28,7 @@ var migrations = []string{
 	1: schemaV1,
 	2: schemaV2,
 	3: schemaV3,
+	4: schemaV4,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -206,5 +207,52 @@ CREATE TABLE IF NOT EXISTS embeddings (
     dim          INTEGER NOT NULL,
     vec          BLOB    NOT NULL,
     PRIMARY KEY (message_hash, model)
+);
+`
+
+// schemaV4 adds AI-extracted contact facts and the per-conversation cursor that
+// makes fact extraction incremental.
+//
+// contact_facts holds atomic, cited facts ABOUT a contact (e.g. "Has a dog
+// named Biscuit", category "personal"), each carrying provenance: the source,
+// the stable hash of the supporting message, and that message's timestamp.
+// Facts are keyed to contacts(id) (not conversations) so a person whose Signal
+// and iMessage threads are merged onto one contact accumulates a single,
+// deduplicated fact set. fact_hash is a stable digest of the normalized fact
+// text; UNIQUE(contact_id, fact_hash) makes PutFact idempotent, so re-running
+// extraction (or processing two merged conversations) never duplicates a fact.
+// There is deliberately NO foreign key from source_message_hash to messages:
+// like embeddings, re-ingest deletes and re-inserts message rows (new rowids,
+// stable hashes), so a CASCADE would wipe facts on every import. A fact whose
+// supporting message later vanishes simply renders without a jump link.
+//
+// fact_state is the incrementality cursor: per conversation, the hash of the
+// last message fed to the extractor and the chat model that produced the facts.
+// The cursor is stored as a HASH (resolved back to a (ts_unix, id) keyset
+// position at run time) rather than a rowid so it survives re-ingest. Recording
+// the model means a model change re-scans from the start; dedup keeps that safe.
+const schemaV4 = `
+CREATE TABLE IF NOT EXISTS contact_facts (
+    id                  INTEGER PRIMARY KEY,
+    contact_id          INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    fact                TEXT    NOT NULL,
+    category            TEXT    NOT NULL,
+    fact_hash           TEXT    NOT NULL,
+    source              TEXT    NOT NULL,
+    source_message_hash TEXT    NOT NULL,
+    source_ts           TEXT    NOT NULL,
+    source_ts_unix      INTEGER NOT NULL,
+    model               TEXT    NOT NULL,
+    created_at          TEXT    NOT NULL,
+    UNIQUE(contact_id, fact_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_contact_facts_contact ON contact_facts(contact_id);
+
+CREATE TABLE IF NOT EXISTS fact_state (
+    conversation_id   INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    last_message_hash TEXT    NOT NULL,
+    model             TEXT    NOT NULL,
+    facts_added       INTEGER NOT NULL DEFAULT 0,
+    updated_at        TEXT    NOT NULL
 );
 `

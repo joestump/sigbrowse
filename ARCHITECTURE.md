@@ -18,6 +18,7 @@ cmd/msgbrowse            thin main(): delegates to internal/cli
     ├── internal/store   SQLite: schema/migrations, relational + FTS5 + vectors
     ├── internal/llm     OpenAI-compatible client (the only network egress)
     ├── internal/embed   batch embedding orchestration
+    ├── internal/facts   incremental, cited contact-fact extraction (LLM)
     ├── internal/mcp     Model Context Protocol server (tools over the store)
     └── internal/web     net/http + html/template + HTMX UI
 ```
@@ -38,6 +39,10 @@ behavior cannot drift between the model-facing and human-facing surfaces.
 - `embeddings(message_hash, model, dim, vec)` — `PRIMARY KEY (message_hash, model)`,
   no FK (keyed by stable hash so re-import doesn't wipe vectors; multiple models
   coexist).
+- `contact_facts(contact_id, fact, category, fact_hash, source, source_message_hash, …)`
+  — AI-extracted, cited facts deduped per contact (`UNIQUE(contact_id, fact_hash)`),
+  no FK to messages (provenance by stable hash; see ADR-0011). `fact_state` is the
+  per-conversation incremental cursor (last message hash + model).
 - `snapshots`, `ingest_state`, `ingest_runs` — backup inventory + incremental
   bookkeeping + per-run summaries.
 - `messages_fts` — FTS5 external-content table kept in sync by triggers.

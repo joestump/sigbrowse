@@ -113,6 +113,7 @@ never opens or decrypts them.
 | `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). `ingest` is a deprecated alias. |
 | `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). Uses `imessage_archive_root`. |
 | `msgbrowse embed` | Compute embeddings for new messages (semantic search). `--prune` reclaims orphans. |
+| `msgbrowse facts` | Extract AI facts about each contact (incremental, cited; shown on the conversation page). `--reset` rebuilds. |
 | `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
 | `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
 | `msgbrowse journal` | Rebuild the journal + LLM digests *(Slice 6)*. |

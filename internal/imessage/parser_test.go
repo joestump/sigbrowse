@@ -103,6 +103,102 @@ This message responded to an earlier message.
 	}
 }
 
+// TestParseAttachmentVsURL guards the /code-review fixes: a bare URL or a
+// one-word filename in the body must NOT be misclassified as an attachment.
+func TestParseAttachmentVsURL(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM
+MJ
+https://example.com/photo.png
+
+May 20, 2020  9:01:00 AM
+MJ
+readme.txt
+
+May 20, 2020  9:02:00 AM
+MJ
+real attachment below
+attachments/AB/CD/IMG_0001.HEIC
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("got %d messages, want 3", len(msgs))
+	}
+	// URL stays in body and is extracted as a link, not an attachment.
+	if len(msgs[0].Attachments) != 0 {
+		t.Errorf("URL misclassified as attachment: %+v", msgs[0].Attachments)
+	}
+	if len(msgs[0].Links) != 1 || msgs[0].Links[0].URL != "https://example.com/photo.png" {
+		t.Errorf("URL not extracted as link: %+v", msgs[0].Links)
+	}
+	// One-word filename (no slash) stays in body.
+	if len(msgs[1].Attachments) != 0 || msgs[1].Body != "readme.txt" {
+		t.Errorf("one-word filename misclassified: atts=%+v body=%q", msgs[1].Attachments, msgs[1].Body)
+	}
+	// A real slash-bearing local path IS an attachment.
+	if len(msgs[2].Attachments) != 1 || msgs[2].Attachments[0].RelPath != "attachments/AB/CD/IMG_0001.HEIC" {
+		t.Errorf("real attachment not detected: %+v", msgs[2].Attachments)
+	}
+}
+
+// TestParseBodyDateNotSplit guards against a body line that begins with a date
+// being mistaken for a new message timestamp.
+func TestParseBodyDateNotSplit(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM
+MJ
+Jan 5, 2021 10:30:00 AM was when we landed
+it was a long flight
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1 (body date must not split)", len(msgs))
+	}
+	if msgs[0].Body != "Jan 5, 2021 10:30:00 AM was when we landed\nit was a long flight" {
+		t.Errorf("body mangled by false split: %q", msgs[0].Body)
+	}
+}
+
+// TestParseReadReceiptSuffix confirms a timestamp line with a trailing
+// parenthesized read receipt is still detected and parsed.
+func TestParseReadReceiptSuffix(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM (Read by them after 2 minutes)
+MJ
+hi
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Sender != "MJ" || msgs[0].Body != "hi" {
+		t.Fatalf("read-receipt timestamp not parsed: %+v", msgs)
+	}
+}
+
+// TestParseSenderlessDropped confirms two adjacent timestamp lines do not emit
+// an empty junk message.
+func TestParseSenderlessDropped(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM
+May 20, 2020  9:01:00 AM
+MJ
+hi
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1 (empty first block dropped): %+v", len(msgs), msgs)
+	}
+	if msgs[0].Sender != "MJ" || msgs[0].Body != "hi" {
+		t.Errorf("surviving message wrong: %+v", msgs[0])
+	}
+}
+
 func TestParseOwnerVsHandle(t *testing.T) {
 	const in = `Jun 05, 2020  2:30:00 PM
 +15551234567

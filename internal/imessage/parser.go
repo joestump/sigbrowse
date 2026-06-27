@@ -37,15 +37,36 @@ import (
 // collapsed to one (the source format space-pads single-digit hours).
 const timestampLayout = "Jan 2, 2006 3:04:05 PM"
 
-// timestampRe anchors the start-of-message line: "Mon DD, YYYY  H:MM:SS AM/PM".
-// Any trailing text (e.g. a read receipt) is ignored.
-var timestampRe = regexp.MustCompile(`^[A-Z][a-z]{2} \d{1,2}, \d{4}\s+\d{1,2}:\d{2}:\d{2} [AP]M`)
+// tsCore is the timestamp itself: "Mon DD, YYYY  H:MM:SS AM/PM" (space-padded
+// hour). timestampLineRe requires the WHOLE line to be that timestamp, optionally
+// followed by a parenthesized read receipt — so a body line that merely *begins*
+// with a date ("Jan 5, 2021 10:30:00 AM was great") is not mistaken for a new
+// message. Group 1 captures the core for parsing.
+const tsCore = `[A-Z][a-z]{2} \d{1,2}, \d{4}\s+\d{1,2}:\d{2}:\d{2} [AP]M`
+
+var timestampLineRe = regexp.MustCompile(`^(` + tsCore + `)(?:\s*\(.*\))?\s*$`)
 
 var spaceRun = regexp.MustCompile(`\s+`)
 
-// attachmentExtRe matches a spaceless path/filename ending in a known media or
-// document extension — the heuristic for an attachment path line.
-var attachmentExtRe = regexp.MustCompile(`(?i)^\S+\.(jpe?g|png|gif|heic|heif|webp|bmp|tiff?|mov|mp4|m4v|3gp|avi|mkv|caf|m4a|amr|aac|wav|mp3|pdf|vcf|zip|docx?|xlsx?|pptx?|csv|txt|html?)$`)
+// attachmentExtRe matches a path ending in a known media/document extension.
+// isAttachmentPath adds the path-shape and URL guards.
+var attachmentExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|heic|heif|webp|bmp|tiff?|mov|mp4|m4v|3gp|avi|mkv|caf|m4a|amr|aac|wav|mp3|pdf|vcf|zip|docx?|xlsx?|pptx?|csv|txt|html?)$`)
+
+// isAttachmentPath reports whether a (trimmed) content line is an attachment
+// path. imessage-exporter writes attachments as bare filesystem paths (relative
+// "attachments/…" in copy mode, or absolute), so we require a spaceless,
+// slash-bearing, non-URL token ending in a known extension. This deliberately
+// excludes bare URLs (which contain "://" and stay in the body so they become
+// links) and one-word body lines like "readme.txt" (no slash).
+func isAttachmentPath(trimmed string) bool {
+	if strings.ContainsAny(trimmed, " \t") || strings.Contains(trimmed, "://") {
+		return false
+	}
+	if !strings.Contains(trimmed, "/") {
+		return false
+	}
+	return attachmentExtRe.MatchString(trimmed)
+}
 
 // imageExts are extensions classified as images (others become file attachments).
 var imageExts = map[string]bool{
@@ -86,9 +107,15 @@ func Parse(conversation string, r io.Reader, emit func(signal.Message) error, on
 		cur.Body = strings.TrimRight(strings.Join(bodyLines, "\n"), "\n")
 		cur.Attachments = atts
 		cur.Links = signal.ExtractLinks(cur.Body)
+		empty := cur.Sender == "" && cur.Body == "" && len(atts) == 0 && len(cur.Links) == 0
 		cur.Seq = seq.next(cur.Conversation, cur.TimestampRaw, cur.Sender, cur.Body)
 		m := *cur
 		cur, bodyLines, atts, expect = nil, nil, nil, stateNone
+		if empty {
+			// Drop junk: a timestamp with no sender, body, attachment, or link
+			// (e.g. two adjacent timestamp lines). Never persist an empty row.
+			return nil
+		}
 		return emit(m)
 	}
 
@@ -144,7 +171,7 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 		// own top-level block elsewhere) — skip.
 	case noticeLines[trimmed]:
 		// Status notice — not content.
-	case attachmentExtRe.MatchString(trimmed):
+	case isAttachmentPath(trimmed):
 		kind := signal.KindFile
 		if imageExts[strings.ToLower(filepath.Ext(trimmed))] {
 			kind = signal.KindImage
@@ -160,11 +187,11 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 // parseTimestamp returns the normalized timestamp text and parsed time if line
 // begins with an imessage-exporter timestamp.
 func parseTimestamp(line string) (raw string, t time.Time, ok bool) {
-	m := timestampRe.FindString(line)
-	if m == "" {
+	m := timestampLineRe.FindStringSubmatch(line)
+	if m == nil {
 		return "", time.Time{}, false
 	}
-	norm := spaceRun.ReplaceAllString(strings.TrimSpace(m), " ")
+	norm := spaceRun.ReplaceAllString(strings.TrimSpace(m[1]), " ")
 	parsed, err := time.Parse(timestampLayout, norm)
 	if err != nil {
 		return "", time.Time{}, false

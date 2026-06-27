@@ -1,0 +1,19 @@
+# Keep the build context small and never ship local data/secrets into the image.
+/bin/
+/dist/
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/config.yaml
+/litellm.local.yaml
+.env
+.git/
+.github/
+# Scope doc excludes to the repo root so embedded files like
+# internal/web/static/HTMX-VERSION.md (pulled in by `go:embed static/*`) stay in
+# the build context.
+/*.md
+/docs/
+/testdata/
+coverage.out

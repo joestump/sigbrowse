@@ -23,6 +23,7 @@ type fakeClient struct {
 	mu      sync.Mutex
 	prompts []string
 	resp    string
+	chatErr error // when set, Chat returns this (simulates a transport error)
 	calls   int
 }
 
@@ -34,6 +35,9 @@ func (f *fakeClient) Chat(_ context.Context, req llm.ChatRequest) (string, error
 		if m.Role == llm.RoleUser {
 			f.prompts = append(f.prompts, m.Content)
 		}
+	}
+	if f.chatErr != nil {
+		return "", f.chatErr
 	}
 	return f.resp, nil
 }
@@ -136,6 +140,58 @@ func TestRunExtractsHonorsExcludeAndIsIncremental(t *testing.T) {
 	}
 	if client.calls != callsBefore {
 		t.Errorf("re-run made %d new LLM calls, want 0 (cursor exhausted)", client.calls-callsBefore)
+	}
+}
+
+func TestRunSkipsUnparseableBatchWithoutAborting(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	seed(t, st, source.Signal, "Alex")
+	seed(t, st, source.Signal, "Blair")
+
+	// A response with no JSON array is unparseable. It must be skipped (logged),
+	// not abort the run, and the cursor must still advance so it isn't retried.
+	client := &fakeClient{resp: "Sorry, I can't help with that."}
+	sum, err := Run(ctx, st, client, Options{Model: "m", Logger: quietLogger()})
+	if err != nil {
+		t.Fatalf("Run aborted on an unparseable batch: %v", err)
+	}
+	if sum.FactsAdded != 0 {
+		t.Errorf("FactsAdded = %d, want 0", sum.FactsAdded)
+	}
+	if sum.Conversations != 2 {
+		t.Errorf("Conversations = %d, want 2 (both still processed)", sum.Conversations)
+	}
+	if n, _ := st.CountFacts(ctx); n != 0 {
+		t.Errorf("stored facts = %d, want 0", n)
+	}
+	// Cursor advanced despite the skip: a re-run makes no new LLM calls.
+	before := client.calls
+	if _, err := Run(ctx, st, client, Options{Model: "m", Logger: quietLogger()}); err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != before {
+		t.Errorf("re-run made %d new calls, want 0 (cursor advanced past skipped batch)", client.calls-before)
+	}
+}
+
+func TestRunAbortsOnTransportError(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	seed(t, st, source.Signal, "Alex")
+
+	client := &fakeClient{chatErr: errors.New("connection refused")}
+	_, err := Run(ctx, st, client, Options{Model: "m", Concurrency: 1, Logger: quietLogger()})
+	if err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("Run err = %v, want a transport error to abort the run", err)
+	}
+	// A transport error must NOT advance the cursor (so the next run resumes).
+	var rows int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM fact_state`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Errorf("fact_state rows = %d, want 0 (cursor not advanced on abort)", rows)
 	}
 }
 

@@ -15,6 +15,7 @@ package facts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -48,18 +49,26 @@ func isKnownCategory(c string) bool {
 }
 
 // systemPrompt instructs the model to return strict JSON. It is part of the
-// effective prompt version; editing it changes extraction behavior.
-const systemPrompt = `You extract durable, factual information about ONE person (the contact) from a transcript of their chat messages.
+// effective prompt version; editing it changes extraction behavior. The category
+// list is derived from Categories so the prompt and the validator
+// (isKnownCategory) cannot drift.
+var systemPrompt = `You extract durable, factual information about ONE person (the contact) from a transcript of their chat messages.
 
 Rules:
 - Return ONLY a JSON array, no prose, no markdown fences.
 - Each element is an object: {"fact": string, "category": string, "evidence": integer}.
 - "fact" is a single, atomic, self-contained statement about the contact, in third person, terse (e.g. "Has a dog named Biscuit", "Works as a nurse in Denver"). Phrase recurring facts consistently so duplicates collapse.
-- "category" is one of: personal, work, relationships, preferences, health, location, plans, other.
+- "category" is one of: ` + strings.Join(Categories, ", ") + `.
 - "evidence" is the 1-based number of the single message that best supports the fact.
 - Only include facts that are clearly stated or strongly implied by the contact. Do NOT speculate, infer mood, or summarize events.
 - Facts must be about the CONTACT, not about "You" (the archive owner).
 - If there are no durable facts, return [].`
+
+// errBadResponse marks an LLM response that could not be parsed into facts (as
+// opposed to a transport error from the LLM call). A bad response is skipped and
+// logged rather than aborting the whole run, so one deterministically-malformed
+// batch can't wedge a conversation forever.
+var errBadResponse = errors.New("unparseable facts response")
 
 // rawFact is the model's per-fact JSON shape.
 type rawFact struct {
@@ -200,6 +209,16 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	if workers <= 0 {
 		workers = 4
 	}
+	// The LLM client omits a zero temperature/max-tokens on the wire (omitempty),
+	// which would let the provider apply its own (often high) defaults. Extraction
+	// wants low, bounded, near-deterministic output so the text-based dedup holds,
+	// so default them here rather than relying on the provider.
+	if opts.Temperature == 0 {
+		opts.Temperature = 0.2
+	}
+	if opts.MaxTokens == 0 {
+		opts.MaxTokens = 1024
+	}
 	start := time.Now()
 
 	if opts.Reset {
@@ -320,39 +339,58 @@ func processConversation(ctx context.Context, st *store.Store, client llm.Client
 		if len(page.Messages) == 0 {
 			break
 		}
-		lastHash := page.Messages[len(page.Messages)-1].Hash
 
 		included := realMessages(page.Messages)
+		// Anchor the persisted cursor on the last REAL message when there is one:
+		// re-ingest tends to reformat volatile system lines (changing their hash),
+		// and anchoring on a system line would then fail to resolve and force a
+		// full re-scan. The in-memory keyset still advances past the whole batch
+		// below, so nothing is reprocessed within this run.
+		lastHash := page.Messages[len(page.Messages)-1].Hash
+		if len(included) > 0 {
+			lastHash = included[len(included)-1].Hash
+		}
+
 		added := 0
 		if len(included) > 0 {
 			parsed, err := extract(ctx, client, model, opts, fc.Name, included)
-			if err != nil {
+			switch {
+			case err == nil:
+				stats.MessagesParsed += len(included)
+				for _, pf := range parsed {
+					ok, err := st.PutFact(ctx, store.FactInput{
+						ContactID:         fc.ContactID,
+						Fact:              pf.Fact,
+						Category:          pf.Category,
+						Source:            fc.Source,
+						SourceMessageHash: pf.Msg.Hash,
+						SourceTS:          pf.Msg.TS,
+						SourceTSUnix:      pf.Msg.TSUnix,
+						Model:             model,
+					})
+					if err != nil {
+						return stats, err
+					}
+					if ok {
+						added++
+					}
+				}
+				stats.FactsAdded += added
+				stats.Batches++
+			case errors.Is(err, errBadResponse):
+				// One malformed response must not abort the whole run or wedge
+				// this conversation: log it and advance past the batch (a re-run
+				// won't help a deterministically-bad batch; --reset can retry).
+				log.Warn("skipping batch with unparseable facts response",
+					"conversation", fc.Name, "source", fc.Source, "error", err)
+			default:
+				// Transport/LLM error: abort. The cursor was not advanced for this
+				// batch, so the next run resumes here.
 				return stats, fmt.Errorf("conversation %q (%s): %w", fc.Name, fc.Source, err)
 			}
-			stats.MessagesParsed += len(included)
-			for _, pf := range parsed {
-				ok, err := st.PutFact(ctx, store.FactInput{
-					ContactID:         fc.ContactID,
-					Fact:              pf.Fact,
-					Category:          pf.Category,
-					Source:            fc.Source,
-					SourceMessageHash: pf.Msg.Hash,
-					SourceTS:          pf.Msg.TS,
-					SourceTSUnix:      pf.Msg.TSUnix,
-					Model:             model,
-				})
-				if err != nil {
-					return stats, err
-				}
-				if ok {
-					added++
-				}
-			}
-			stats.FactsAdded += added
-			stats.Batches++
 		}
-		// Advance the cursor past this batch (even an all-system batch) so the
-		// next run does not reprocess it.
+		// Advance the cursor past this batch (even an all-system or skipped batch)
+		// so the next run does not reprocess it.
 		if err := st.SetFactState(ctx, fc.ID, lastHash, model, added); err != nil {
 			return stats, err
 		}
@@ -379,9 +417,13 @@ func extract(ctx context.Context, client llm.Client, model string, opts Options,
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, err // transport/LLM error: fatal, resumable
 	}
-	return parseFacts(resp, included)
+	parsed, perr := parseFacts(resp, included)
+	if perr != nil {
+		return nil, fmt.Errorf("%w: %v", errBadResponse, perr)
+	}
+	return parsed, nil
 }
 
 // realMessages drops system messages and empty bodies — there is nothing to

@@ -87,11 +87,21 @@ func Detect() (Converter, bool) {
 }
 
 // convert writes a JPEG derivative of src to dst (atomically via a temp file).
+// The temp name is unique per call (not dst+".tmp"): the same source path can
+// appear in multiple attachment rows — a photo shared to a group or referenced
+// by several messages — so two workers may target the same dst concurrently. A
+// per-call temp keeps them from clobbering each other's in-flight file; both
+// produce identical bytes, so the last rename wins harmlessly.
 func (c Converter) convert(ctx context.Context, src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	tmp := dst + ".tmp"
+	tmpf, err := os.CreateTemp(filepath.Dir(dst), "conv-*.jpg")
+	if err != nil {
+		return err
+	}
+	tmp := tmpf.Name()
+	_ = tmpf.Close()
 	cmd := exec.CommandContext(ctx, c.Name, c.args(src, tmp)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(tmp)
@@ -222,5 +232,8 @@ done:
 	log.Info("image transcode complete",
 		"converted", sum.Converted, "skipped", sum.Skipped, "missing", sum.Missing,
 		"failed", sum.Failed, "duration_ms", sum.DurationMS)
-	return sum, ctx.Err()
+	// Cancellation/deadline is a clean stop, not a failure: every derivative was
+	// written atomically and a re-run resumes (incremental skip), so report the
+	// partial summary without surfacing ctx.Err().
+	return sum, nil
 }

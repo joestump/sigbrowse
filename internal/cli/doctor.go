@@ -171,40 +171,41 @@ func checkDataDir(ctx context.Context, r *report, cfg *config.Config) *store.Sto
 		r.add(statusFail, "data_dir is not set", "set data_dir (config), --data-dir, or MSGBROWSE_DATA_DIR to a writable directory")
 		return nil
 	}
-	dbExisted := fileExists(dbPath(cfg))
 
+	// doctor is a read-only diagnostic: it must NOT create the data dir or the
+	// database (a typo'd --data-dir should be reported, not silently created).
 	info, err := os.Stat(cfg.DataDir)
 	switch {
 	case os.IsNotExist(err):
 		r.add(statusWarn, fmt.Sprintf("data_dir %q does not exist yet", cfg.DataDir),
-			"it will be created on first import; run `msgbrowse import` once your archives are configured")
+			"it's created on first import; run `msgbrowse import` once your archives are configured")
+		return nil // nothing to open; don't create anything
 	case err != nil:
 		r.add(statusFail, fmt.Sprintf("data_dir %q: %v", cfg.DataDir, err), "check the path and permissions")
 		return nil
 	case !info.IsDir():
 		r.add(statusFail, fmt.Sprintf("data_dir %q is not a directory", cfg.DataDir), "point data_dir at a directory")
 		return nil
-	default:
-		if err := writable(cfg.DataDir); err != nil {
-			r.add(statusFail, fmt.Sprintf("data_dir %q is not writable: %v", cfg.DataDir, err),
-				"the database and caches live here; grant write access or choose another data_dir")
-			return nil
-		}
-		r.add(statusPass, fmt.Sprintf("data_dir %q exists and is writable", cfg.DataDir), "")
 	}
+	if err := writable(cfg.DataDir); err != nil {
+		r.add(statusFail, fmt.Sprintf("data_dir %q is not writable: %v", cfg.DataDir, err),
+			"the database and caches live here; grant write access or choose another data_dir")
+		return nil
+	}
+	r.add(statusPass, fmt.Sprintf("data_dir %q exists and is writable", cfg.DataDir), "")
 
-	// openStore creates the data dir and applies migrations — the only write,
-	// and only to msgbrowse's own dir, never the read-only archives.
-	st, err := openStore(cfg)
-	if err != nil {
-		r.add(statusFail, fmt.Sprintf("cannot open database: %v", err), "check data_dir permissions and disk space")
+	if !fileExists(dbPath(cfg)) {
+		r.add(statusWarn, "no database yet (no import has run)",
+			"run `msgbrowse import` after configuring your archive roots")
 		return nil
 	}
 
-	if !dbExisted {
-		r.add(statusWarn, "database is empty (no import has run yet)",
-			"run `msgbrowse import` after configuring your archive roots")
-		return st
+	// Open read-only and WITHOUT migrating, so we report the true on-disk schema
+	// version (drift is meaningful) and never write to the user's DB.
+	st, err := store.OpenReadOnly(dbPath(cfg))
+	if err != nil {
+		r.add(statusFail, fmt.Sprintf("cannot open database (read-only): %v", err), "check data_dir permissions")
+		return nil
 	}
 
 	if v, err := st.UserVersion(ctx); err != nil {
@@ -212,10 +213,8 @@ func checkDataDir(ctx context.Context, r *report, cfg *config.Config) *store.Sto
 	} else if v == store.SchemaVersion() {
 		r.add(statusPass, fmt.Sprintf("database schema is current (version %d)", v), "")
 	} else {
-		// After a successful Open this should not happen (Open migrates forward);
-		// surface it defensively.
 		r.add(statusWarn, fmt.Sprintf("database schema version %d, binary expects %d", v, store.SchemaVersion()),
-			"a normal command run will migrate it forward")
+			"run any msgbrowse command (e.g. `import`) to migrate it forward")
 	}
 
 	convs, cerr := st.ListConversations(ctx)
@@ -468,8 +467,11 @@ const (
 //
 // An absolute rel_path is the signature of a non-copy-mode iMessage export: the
 // exporter wrote the original ~/Library/.../Attachments path rather than copying
-// the file into the archive. These never resolve inside the read-only archive
-// (Resolve/Contain reject them as traversal), so the gallery can't show them.
+// the file into the archive. The IsAbs short-circuit below is what catches these
+// — archivepath.Contain does NOT reject an absolute path, it neutralizes the
+// leading "/" and folds it UNDER the archive root, which would mis-classify it as
+// present/missing rather than flagging the real problem. So the explicit IsAbs
+// check must come first.
 func classifyAttachment(src, archiveRoot, imessageRoot, convName, rel string, statFn func(string) (os.FileInfo, error)) attachmentClass {
 	if filepath.IsAbs(rel) {
 		return attachAbsolute

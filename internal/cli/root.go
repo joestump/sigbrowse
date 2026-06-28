@@ -55,6 +55,7 @@ func NewRootCommand() *cobra.Command {
 	pf.String("log-level", "", "log level: debug, info, warn, error")
 
 	root.AddCommand(
+		newImportCommand(),
 		newSignalImportCommand(),
 		newIngestAliasCommand(),
 		newIMessageImportCommand(),
@@ -167,9 +168,25 @@ func newLogHandler(level string) slog.Handler {
 	case "error":
 		lvl = charmlog.ErrorLevel
 	}
-	return charmlog.NewWithOptions(os.Stderr, charmlog.Options{
+	logger := charmlog.NewWithOptions(os.Stderr, charmlog.Options{
 		Level:           lvl,
 		ReportTimestamp: true,
 		TimeFormat:      "15:04:05",
 	})
+	// Prefix each level with an emoji so status reads at a glance. We keep the
+	// level word (and charm's color) and just swap the rendered label string.
+	styles := charmlog.DefaultStyles()
+	for level, label := range map[charmlog.Level]string{
+		charmlog.DebugLevel: "🔍 DEBUG",
+		charmlog.InfoLevel:  "✅ INFO",
+		charmlog.WarnLevel:  "⚠️ WARN",
+		charmlog.ErrorLevel: "🛑 ERROR",
+		charmlog.FatalLevel: "💀 FATAL",
+	} {
+		// Drop the default 4-cell MaxWidth (it would truncate "✅ INFO" → "✅ I");
+		// keep the level's color from DefaultStyles.
+		styles.Levels[level] = styles.Levels[level].SetString(label).UnsetMaxWidth()
+	}
+	logger.SetStyles(styles)
+	return logger
 }

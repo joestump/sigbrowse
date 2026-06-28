@@ -56,9 +56,11 @@ msgbrowse --data-dir ./data embed          # optional; needs an LLM endpoint
 msgbrowse --data-dir ./data serve          # auto-opens http://127.0.0.1:8787 (use --open=false for headless)
 ```
 
-(Import whichever sources you have — `signal-import`, `imessage-import`, or both;
-they share one database.) Both importers are incremental and idempotent; re-run
-them after each new export.
+Both archive roots can also live in config/env, in which case the all-in-one
+`msgbrowse --data-dir ./data import` imports every configured source in one go.
+Import whichever sources you have — `signal-import`, `imessage-import`, `import`,
+or both individually; they share one database and are incremental and idempotent,
+so re-run after each new export.
 `embed` computes vectors for semantic search and needs an LLM endpoint (see
 below); browsing and keyword search work without one.
 
@@ -152,11 +154,12 @@ never opens or decrypts them.
 
 | Command | What it does |
 | --- | --- |
+| `msgbrowse import` | **All-in-one**: import every configured archive (Signal + iMessage) into one DB. Unset sources are skipped. |
 | `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). `ingest` is a deprecated alias. |
 | `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). Uses `imessage_archive_root`. |
 | `msgbrowse embed` | Compute embeddings for new messages (semantic search). `--prune` reclaims orphans. |
 | `msgbrowse facts` | Extract AI facts about each contact (incremental, cited; shown on the conversation page). `--reset` rebuilds. |
-| `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
+| `msgbrowse serve` | Run the local HTMX web UI. `--port`/`--host` (or `--listen-addr`) to bind elsewhere; `--open=false` for headless. Default `127.0.0.1:8787`. |
 | `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
 | `msgbrowse journal` | Rebuild the journal + LLM digests *(Slice 6)*. |
 | `msgbrowse watch` | Re-ingest when the archive changes *(planned)*. |

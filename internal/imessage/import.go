@@ -60,6 +60,26 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 		return run, fmt.Errorf("read imessage archive: %w", err)
 	}
 
+	// Diagnose the common "0 imported" case up front: the importer only reads
+	// top-level <ChatName>.txt files (imessage-exporter `-f txt` output). If there
+	// are none, say so loudly with what we DID see, so a nested or wrong-format
+	// archive doesn't silently look like a successful no-op.
+	var txtCount, dirCount int
+	for _, e := range entries {
+		switch {
+		case e.IsDir():
+			dirCount++
+		case strings.HasSuffix(e.Name(), ".txt"):
+			txtCount++
+		}
+	}
+	if txtCount == 0 {
+		log.Warn("no <ChatName>.txt files found at the top level of the imessage archive — "+
+			"point --imessage-archive-root at the directory imessage-exporter wrote with `-f txt` "+
+			"(flat .txt files; nested subfolders are not scanned)",
+			"archive", opts.ArchiveRoot, "entries", len(entries), "subdirs", dirCount)
+	}
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
 			continue

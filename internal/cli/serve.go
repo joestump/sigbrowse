@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/joestump/msgbrowse/internal/config"
@@ -25,9 +28,11 @@ func newServeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if addr, _ := cmd.Flags().GetString("listen-addr"); addr != "" {
-				cfg.ListenAddr = addr
+			addr, err := resolveListenAddr(cmd, cfg.ListenAddr)
+			if err != nil {
+				return err
 			}
+			cfg.ListenAddr = addr
 
 			st, err := openStore(cfg)
 			if err != nil {
@@ -59,9 +64,34 @@ func newServeCommand() *cobra.Command {
 			return srv.Run(ctx, cfg.ListenAddr)
 		},
 	}
-	cmd.Flags().String("listen-addr", "", "override listen address (default 127.0.0.1:8787)")
+	cmd.Flags().String("listen-addr", "", "full listen address host:port (overrides --host/--port and config)")
+	cmd.Flags().String("host", "", "bind host (e.g. 127.0.0.1 or 0.0.0.0); default keeps the configured host")
+	cmd.Flags().Int("port", 0, "bind port (e.g. 8888); default keeps the configured port")
 	cmd.Flags().Bool("open", true, "open the UI in your default browser on start (use --open=false for headless)")
 	return cmd
+}
+
+// resolveListenAddr layers the serve address flags over the configured default:
+// --listen-addr replaces the whole address; otherwise --host / --port override
+// just those parts of the configured host:port. Returns the final host:port.
+func resolveListenAddr(cmd *cobra.Command, configured string) (string, error) {
+	if la, _ := cmd.Flags().GetString("listen-addr"); la != "" {
+		return la, nil
+	}
+	host, port, err := net.SplitHostPort(configured)
+	if err != nil {
+		return "", fmt.Errorf("invalid configured listen_addr %q: %w", configured, err)
+	}
+	if h, _ := cmd.Flags().GetString("host"); h != "" {
+		host = h
+	}
+	if p, _ := cmd.Flags().GetInt("port"); p != 0 {
+		if p < 1 || p > 65535 {
+			return "", fmt.Errorf("invalid --port %d (want 1-65535)", p)
+		}
+		port = strconv.Itoa(p)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 // ingestOnStart runs a best-effort ingest pass before serving, when configured

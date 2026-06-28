@@ -36,7 +36,8 @@ testable requirements and the slate tokens.
 - **Shape:** radius rows/cards 8–14, inputs 8–11, avatars 50% (or 6px dense),
   pills 5–8, frame 14–16. In-app elevation via borders, not shadows.
 - **Layout:** navbar 54px, sidebar 320px, transcript column max-width 640px
-  (680px editorial). Use flex/grid `gap`, not margins.
+  (680px editorial). Centered screen columns: Home ~780px, Journal ~880px. Use
+  flex/grid `gap`, not margins.
 
 ## Requirements
 
@@ -170,13 +171,25 @@ tabular values, source-grouped runs) with no behavioral change.
 - **When** Status renders
 - **Then** it uses slate surfaces/borders and mono tabular values.
 
-### REQ-0006-012: Journal (slate UI) — blocked on backend
-When the journal backend exists, the Journal screen MUST render a daily editorial
-card (accent eyebrow, AI prose summary, People/Themes/Mood meta), a month strip,
-and per-day cards (highlights/people/themes/mood/media/links). This requirement
-is BLOCKED on the journal digest backend (Slice 6) and is tracked accordingly.
+### REQ-0006-012a: Journal screen shell (testable now)
+The Journal screen MUST render the slate layout — daily editorial card (accent
+eyebrow, prose region, People/Themes/Mood meta row), month strip, and per-day
+cards — from a **stubbed/fixture** day summary, independent of the LLM backend.
+This is verifiable at merge with a fixture and MUST NOT depend on live digest
+generation.
 
-#### Scenario: Editorial day card
+#### Scenario: Editorial card renders from a fixture
+- **Given** a fixture day summary (prose + people/themes/mood)
+- **When** the Journal screen renders
+- **Then** it shows the eyebrow, prose, and People/Themes/Mood meta in the slate layout.
+
+### REQ-0006-012b: Journal wired to real digests — BLOCKED on backend
+Once the journal digest backend exists, the Journal screen MUST render real
+generated summaries (per-day, cached) over the raw messages. This requirement is
+BLOCKED on the journal digest backend (roadmap Slice 6) and is deferred — it is
+NOT counted against this epic's mergeable slices.
+
+#### Scenario: Real editorial day
 - **Given** a generated editorial summary for a day
 - **When** the Journal screen renders that day
-- **Then** it shows the eyebrow, prose summary, and People/Themes/Mood meta over the raw messages.
+- **Then** it shows the generated prose and People/Themes/Mood derived from that day's threads.

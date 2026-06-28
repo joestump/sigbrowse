@@ -77,6 +77,8 @@ drift guard).
 
 ## Sequencing & dependencies
 
+Below, the bare `REQ-NNN` form abbreviates the spec's `REQ-0006-NNN` IDs.
+
 ```
 REQ-001 (theme foundation)
    ├─► REQ-002/003 (navbar, sidebar)  ─► REQ-004 (avatars/presence/pills)

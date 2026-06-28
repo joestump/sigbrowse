@@ -60,6 +60,8 @@ func NewRootCommand() *cobra.Command {
 		newIngestAliasCommand(),
 		newIMessageImportCommand(),
 		newDoctorCommand(),
+		newExportCommand(),
+		newSyncCommand(),
 		newEmbedCommand(),
 		newFactsCommand(),
 		newMediaCommand(),

@@ -50,12 +50,15 @@ Requires **Go 1.25+** — and nothing else. The SQLite driver is pure Go
 go install github.com/joestump/msgbrowse/cmd/msgbrowse@latest
 # msgbrowse lands in $(go env GOBIN) (or $(go env GOPATH)/bin) — put that on $PATH
 
-msgbrowse --archive-root "~/Managed Files/Signal-Archive" --data-dir ./data signal-import
+msgbrowse --archive-root ~/"Managed Files/Signal-Archive" --data-dir ./data signal-import
+msgbrowse --imessage-archive-root ~/"Managed Files/iMessage-Archive" --data-dir ./data imessage-import
 msgbrowse --data-dir ./data embed          # optional; needs an LLM endpoint
-msgbrowse --data-dir ./data serve          # open http://127.0.0.1:8787
+msgbrowse --data-dir ./data serve          # auto-opens http://127.0.0.1:8787 (use --open=false for headless)
 ```
 
-`signal-import` is incremental and idempotent; re-run it after each new export.
+(Import whichever sources you have — `signal-import`, `imessage-import`, or both;
+they share one database.) Both importers are incremental and idempotent; re-run
+them after each new export.
 `embed` computes vectors for semantic search and needs an LLM endpoint (see
 below); browsing and keyword search work without one.
 

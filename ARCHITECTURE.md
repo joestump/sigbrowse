@@ -85,9 +85,9 @@ untrusted message content), HTMX for partials (live search, infinite scroll). No
 SPA, no Node; vendored htmx pinned by SHA.
 
 Styling is **Tailwind CSS + daisyUI** (drawer/navbar layout, `chat` bubbles for
-transcripts, `card`/`menu`/`tabs`/`stat` components) with a dim (dark) / winter
-(light) **theme toggle** (`internal/web/static/theme.js`, self-hosted, persists
-to `localStorage`). Icons are vendored **Hero Icons** inline SVG. The stylesheet
+transcripts, `card`/`menu`/`tabs`/`stat` components) with a bespoke **slate**
+(dark, default) / **slate-light** custom-theme toggle (ADR-0012;
+`internal/web/static/theme.js`, self-hosted, persists to `localStorage`). Icons are vendored **Hero Icons** inline SVG. The stylesheet
 is built by the Tailwind **standalone CLI + daisyUI** at dev time (`make css`,
 no Node) and the resulting `app.css` is committed and `go:embed`-served, so the
 runtime and Docker image need no toolchain and stay CDN-free.
@@ -108,8 +108,9 @@ the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 
 ## Containerization
 
-Multi-stage `Dockerfile`: cgo build on `golang:1.25-bookworm`, runtime on
-distroless (`nonroot`, glibc, no shell). `docker-compose.yml` wires msgbrowse to a
+Multi-stage `Dockerfile`: static (`CGO_ENABLED=0`) build on `golang:1.25-bookworm`,
+runtime on `distroless/static-debian12` (`nonroot`, no libc, no shell) — fully
+static since the SQLite driver is pure Go (ADR-0013). `docker-compose.yml` wires msgbrowse to a
 LiteLLM proxy (optional Ollama behind it), bind-mounts the archive read-only,
 keeps app data in a named volume, publishes the UI to host loopback only, and
 hardens the app container (read-only rootfs, dropped capabilities, no privilege

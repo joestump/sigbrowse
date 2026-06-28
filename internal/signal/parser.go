@@ -22,6 +22,14 @@ var (
 	linkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
 	// urlRe matches a bare http(s) URL up to the first whitespace or delimiter.
 	urlRe = regexp.MustCompile(`https?://[^\s<>()\[\]"'` + "`" + `]+`)
+	// reactionLineRe matches signal-export's reactions trailer on its own line,
+	// e.g. "(- Alice: 👍, Bob: ❤️ -)". signal-export writes reactions by appending
+	// "\n(- <Name>: <emoji>, … -)" to the body (sigexport/models.py, Message.to_md
+	// / from_md: https://github.com/carderne/signal-export/blob/main/sigexport/models.py),
+	// so the trailer is always the final line of a message. Anchored to a full line
+	// (with optional surrounding whitespace) so an in-body parenthetical never
+	// matches. Group 1 captures the inner "Name: emoji, …" list.
+	reactionLineRe = regexp.MustCompile(`(?m)^[ \t]*\(- (.*) -\)[ \t]*$`)
 )
 
 // trailingURLPunct is stripped from the end of bare URLs (sentence punctuation
@@ -66,7 +74,11 @@ func Parse(conversation string, r io.Reader, emit func(Message) error, onSkip fu
 		if cur == nil {
 			return nil
 		}
-		cur.Body = normalizeBody(bodyBuf.String())
+		body := normalizeBody(bodyBuf.String())
+		// Divert a trailing reactions trailer onto this message so it never becomes
+		// part of the body (or, worse, a standalone message).
+		body, cur.Reactions = extractReactions(body)
+		cur.Body = body
 		cur.Attachments, cur.Links = extract(cur.Body)
 		cur.Seq = seq.next(cur.Conversation, cur.TimestampRaw, cur.Sender, cur.Body)
 		m := *cur
@@ -209,6 +221,44 @@ func extract(body string) ([]Attachment, []Link) {
 		addLink(u)
 	}
 	return atts, links
+}
+
+// extractReactions splits a signal-export reactions trailer off the END of a
+// message body and returns the cleaned body plus the parsed reactions. The
+// trailer is "(- <Name>: <emoji>, … -)" on its own (final) line; each entry is
+// "<Name>: <emoji>" joined by ", ". To mirror signal-export's own tolerant
+// round-trip (sigexport/models.py from_md splits each entry on the FIRST colon),
+// the reactor name is everything before the first ": " and the emoji is the rest,
+// so an emoji or name containing a colon is preserved. Entries without a ": "
+// separator are skipped. A body with no trailer is returned unchanged with nil
+// reactions.
+func extractReactions(body string) (string, []Reaction) {
+	loc := reactionLineRe.FindStringSubmatchIndex(body)
+	if loc == nil {
+		return body, nil
+	}
+	// Only treat it as a reactions trailer when it is the LAST non-empty content of
+	// the body — signal-export always appends it last. If trailing text follows,
+	// leave the body untouched (it is an in-body parenthetical, not a trailer).
+	if strings.TrimSpace(body[loc[1]:]) != "" {
+		return body, nil
+	}
+	inner := body[loc[2]:loc[3]]
+	var reactions []Reaction
+	for _, entry := range strings.Split(inner, ", ") {
+		name, emoji, ok := strings.Cut(entry, ": ")
+		if !ok {
+			continue
+		}
+		emoji = strings.TrimSpace(emoji)
+		if emoji == "" {
+			continue
+		}
+		reactions = append(reactions, Reaction{Emoji: emoji, Actor: strings.TrimSpace(name)})
+	}
+	// Strip the trailer (and any blank line it sat on) from the body.
+	cleaned := strings.TrimRight(body[:loc[0]], "\n \t")
+	return cleaned, reactions
 }
 
 // ExtractLinks returns the deduplicated bare http(s) URLs in text (with trailing

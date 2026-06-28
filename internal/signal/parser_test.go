@@ -168,6 +168,75 @@ func TestParse(t *testing.T) {
 	}
 }
 
+// TestParseReactions verifies that signal-export's "(- Name: emoji, … -)" trailer
+// is diverted onto the message's Reactions (not the body, and not a standalone
+// message). The targeted format is sigexport/models.py's Message.to_md:
+// body + "\n(- " + ", ".join(f"{r.name}: {r.emoji}") + " -)".
+func TestParseReactions(t *testing.T) {
+	t.Run("single message with two reactions", func(t *testing.T) {
+		in := "[2022-03-01 09:00:00] Harper: nice photo!\n(- Me: 👍, MJ: ❤️ -)\n"
+		msgs, skips, err := ParseAll("MJ", strings.NewReader(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(skips) != 0 {
+			t.Fatalf("unexpected skips: %+v", skips)
+		}
+		// Exactly one message — the reactions trailer did NOT become its own row.
+		if len(msgs) != 1 {
+			t.Fatalf("got %d messages, want 1: %#v", len(msgs), msgs)
+		}
+		if msgs[0].Body != "nice photo!" {
+			t.Errorf("body leaked reactions trailer: %q", msgs[0].Body)
+		}
+		want := []Reaction{{Emoji: "👍", Actor: "Me"}, {Emoji: "❤️", Actor: "MJ"}}
+		if len(msgs[0].Reactions) != len(want) {
+			t.Fatalf("reactions = %+v, want %+v", msgs[0].Reactions, want)
+		}
+		for i, w := range want {
+			if msgs[0].Reactions[i] != w {
+				t.Errorf("reaction[%d] = %+v, want %+v", i, msgs[0].Reactions[i], w)
+			}
+		}
+	})
+
+	t.Run("multi-line body keeps body, strips trailer", func(t *testing.T) {
+		in := "[2022-03-01 09:00:00] MJ: line one\nline two\n(- Harper: 😂 -)\n"
+		msgs, _, err := ParseAll("MJ", strings.NewReader(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msgs) != 1 {
+			t.Fatalf("got %d messages, want 1", len(msgs))
+		}
+		if msgs[0].Body != "line one\nline two" {
+			t.Errorf("body = %q, want %q", msgs[0].Body, "line one\nline two")
+		}
+		if len(msgs[0].Reactions) != 1 || msgs[0].Reactions[0] != (Reaction{Emoji: "😂", Actor: "Harper"}) {
+			t.Errorf("reactions = %+v", msgs[0].Reactions)
+		}
+	})
+
+	t.Run("trailer inside a quoted reply is not a reaction", func(t *testing.T) {
+		// A "> (- Joe -)" line is quoted body, not signal-export's trailer; it must
+		// stay in the body and produce no reactions.
+		in := "[2022-03-01 09:00:00] Me: > original\n> (- Joe -)\n\nreply\n"
+		msgs, _, err := ParseAll("MJ", strings.NewReader(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msgs) != 1 {
+			t.Fatalf("got %d messages, want 1", len(msgs))
+		}
+		if len(msgs[0].Reactions) != 0 {
+			t.Errorf("quoted parenthetical wrongly parsed as reactions: %+v", msgs[0].Reactions)
+		}
+		if !strings.Contains(msgs[0].Body, "(- Joe -)") {
+			t.Errorf("quoted parenthetical stripped from body: %q", msgs[0].Body)
+		}
+	})
+}
+
 func assertMessage(t *testing.T, i int, got, want Message) {
 	t.Helper()
 	if got.Sender != want.Sender {
